@@ -1,4 +1,4 @@
-1.79
+1.79 UNRELEASED
 
 * Extract dependencies from tests.
 * Add script detection (patch from Jeff Fearn).
@@ -19,6 +19,13 @@
   * Detect scripts better
   * Don't let Module::AutoInstall run interactively
   * Add a simple blacklisting mechanism
+* Support calling from mock
+  * Add --useyum option to use yum instead of rpm
+  * Add --yumroot option to override yum root
+* Support installing modules to site when overriding core modules.
+* Add some basic tests
+* Fix Perl::Critic warnings
+* Add perltidyrc and apply to code files
 
 1.78    2009-01-16
 

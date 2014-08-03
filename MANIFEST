@@ -1,9 +1,14 @@
+Artistic
+BUGS
 Build.PL
+Changes
+COPYING
 cpanspec
 MANIFEST			This list of files
 META.yml
-COPYING
-Artistic
-BUGS
+t/000.load.t
 TODO
-Changes
+xt/author/perlcritic.t
+xt/author/pod-coverage.t
+xt/author/pod.t
+META.json

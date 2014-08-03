@@ -2,3 +2,11 @@ Build
 blib
 _build
 .*.sw?
+cover_db/
+cpanspec*.tar.gz
+MYMETA.yml
+MYMETA.json
+META.json
+META.yml
+*.bak
+
