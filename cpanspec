@@ -571,12 +571,13 @@ sub check_rpm {
 sub check_repo {
     my $dep = shift;
 
-    my $repoquery = which("repoquery");
+    # BUGBUG ahndle yum/dnf detection
+    my $repoquery = which("dnf");
 
     verbose(
         "Running $repoquery to check for $dep.  This may take a while...");
-    my @out
-        = `$repoquery --installroot $yumroot -c $yumroot/etc/yum.conf --whatprovides "$dep"`;
+    my @out = `$repoquery -q provides "$dep"`;
+##        = `$repoquery --installroot $yumroot -c $yumroot/etc/yum.conf --whatprovides "$dep"`;
 
     if ( $? != 0 ) {
 
@@ -639,7 +640,7 @@ GetOptions(
 pod2usage( { -exitval => 0, -verbose => 1 } ) if ($help);
 pod2usage( { -exitval => 1, -verbose => 0 } ) if ( !@ARGV );
 
-if ( $follow and $buildrpm ) {
+if ( 0 && $follow and $buildrpm ) {
     warn "Sorry, --follow and --build are mutually exclusive right now.\n"
         . "We can't build when tracking deps right now.  Ignoring --build.\n";
     $buildrpm = 0;
@@ -703,8 +704,12 @@ $packages = Parse::CPAN::Packages->new($pkgdetails)
 die "Parse::CPAN::Packages->new() failed: $!\n"
     if ( !defined($packages) );
 
+my %build_order;
+my $count = -1;
+
 for my $file (@args) {
     my ( $name, $version, $type );
+    $count++;
 
     if ( $file =~ /^(?:.*\/)?(.*)-(?:v\.?)?([^-]+)\.(tar)\.(?:gz|bz2)$/ ) {
         $name    = $1;
@@ -1003,7 +1008,9 @@ for my $file (@args) {
             = ( %build_requires, %{ $meta->{configure_requires} } )
             if ( $meta->{configure_requires} );
         %requires = %{ $meta->{requires} } if ( $meta->{requires} );
-        if ( $meta->{recommends} ) {
+## BUGBUG recommends often causes circular deps.
+## Make this optional or make it work better...
+        if ( 0 && $meta->{recommends} ) {
             for my $dep ( keys( %{ $meta->{recommends} } ) ) {
                 $requires{$dep} = $requires{$dep}
                     || $meta->{recommends}->{$dep};
@@ -1082,7 +1089,7 @@ for my $file (@args) {
     $license = "CHECK(GPL+ or Artistic)" if ( !$license );
 
     # Add build dependencies for modules used in tests.
-    my @tests = grep { $_ eq "test.pl" or $_ =~ /^t\/.*\.t$/ } @files;
+    my @tests;    # = grep { $_ eq "test.pl" or $_ =~ /^t\/.*\.t$/ } @files;
     use Module::ExtractUse;
     my %bogus_dep = ();
     for my $testfile (@tests) {
@@ -1163,7 +1170,7 @@ for my $file (@args) {
             open( STDERR, ">/dev/null" );
 ## This has to be a string
 ## no critic
-            eval  "no warnings;
+            eval "no warnings;
                   use subs qw(require die warn eval open close rename);
                   BEGIN { sub require { 1; } }
                   BEGIN { sub die { 1; } }
@@ -1234,14 +1241,23 @@ END
             next if ( !$compat );
         }
         elsif ($follow) {
-            if ( $dep ne $module
-                and !( grep { $_ eq $dep } @processed, @args ) )
-            {
-                if ( check_dep($dep) ) {
+            if ( $dep ne $module ) {
+                if ( grep { $_ eq $dep } @processed ) {
+                    verbose("$dep for $module already processed");
+                }
+                elsif ( grep { $_ eq $dep } @args ) {
+
+           # move the module ater this one as the order gets reversed to build
+                    verbose("$dep for $module already added to args");
+                    $build_order{$module} = $count + 1;
+                }
+                elsif ( check_dep($dep) ) {
                     verbose("$dep is available, skipping.");
                 }
                 else {
-                    verbose("$dep is not available, adding it to the list.");
+                    print(
+                        "$dep is not available for $module, adding it to the list.\n"
+                    );
                     push( @args, $dep );
                 }
             }
@@ -1471,8 +1487,19 @@ END
 
     $spec->close();
 
-    build_rpm($specfile) if ( $buildsrpm or $buildrpm );
+    build_rpm($specfile) if ( $buildsrpm or ( $buildrpm && !$follow ) );
 
     push( @processed, $module );
+    $build_order{$module} = $count;
+}
+
+foreach my $mod ( sort { $build_order{$b} <=> $build_order{$a} }
+    keys(%build_order) )
+{
+    $mod =~ s/::/-/g;
+    my $spec = "perl-$mod.spec";
+    system("sudo dnf -q -y builddep $spec");
+    build_rpm($spec);
+    system('find ./noarch/ ./x86_64/ -type f | xargs sudo dnf -q -y install');
 }
 
