@@ -4,3 +4,7 @@
   hard-coding $pkgdetails.
 
 * Add an option to honor %_sourcedir and such.
+
+* Handle Devel::CheckLib
+	e.g. Math-Prime-Util-GMP uses gmp so Requies: gmp and BuildRequires: gmp-devel.
+

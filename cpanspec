@@ -989,6 +989,18 @@ for my $file (@args) {
     {
         $scripts ||= $makecontent =~ 'script_files';
     }
+
+    # BUGBUG only works for most simple case
+    if( $makecontent =~ /LIBS\s*=>\s*\[(.*)\]/) {
+        foreach my $lib (split(/\s+/, $1)) {
+            $lib =~ s/-l//;
+            $lib =~ s/['"]//g;
+            next if($lib eq 'm');
+            push(@add_requires, "$lib");
+            push(@add_buildrequires, "$lib-devel");
+        }
+    }
+
     my ( %build_requires, %requires );
     my ( $yml,            $meta );
     if ( grep /^META\.yml$/, @files
@@ -1144,7 +1156,6 @@ for my $file (@args) {
 
                 sub WriteMakefile {
                     my %args = @_;
-
                     if ( !defined( $args{'PREREQ_PM'} ) ) {
                         return;
                     }
@@ -1493,13 +1504,16 @@ END
     $build_order{$module} = $count;
 }
 
-foreach my $mod ( sort { $build_order{$b} <=> $build_order{$a} }
-    keys(%build_order) )
-{
-    $mod =~ s/::/-/g;
-    my $spec = "perl-$mod.spec";
-    system("sudo dnf -q -y builddep $spec");
-    build_rpm($spec);
-    system('find ./noarch/ ./x86_64/ -type f | xargs sudo dnf -q -y install');
+
+if($buildrpm && $follow ) {
+    foreach my $mod ( sort { $build_order{$b} <=> $build_order{$a} }
+        keys(%build_order) )
+    {
+        $mod =~ s/::/-/g;
+        my $spec = "perl-$mod.spec";
+        system("sudo dnf -q -y builddep $spec");
+        build_rpm($spec);
+        system('find ./noarch/ ./x86_64/ -type f | xargs sudo dnf -q -y install');
+    }
 }
 
