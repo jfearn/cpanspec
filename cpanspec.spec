@@ -21,6 +21,7 @@ BuildRequires:  perl(Text::Autoformat)
 BuildRequires:  perl(YAML)
 Requires:       perl(:MODULE_COMPAT_%(eval "`%{__perl} -V:version`"; echo $version))
 Requires:       yum-utils
+Requires:       gcc
 
 %description
 cpanspec will generate a spec file to build a rpm from a CPAN-style Perl
