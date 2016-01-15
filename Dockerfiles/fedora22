@@ -1,0 +1,8 @@
+FROM fedora:22
+
+# Make a directory to work in
+RUN mkdir /cpanspec
+
+# Install cpanspec deps
+RUN dnf -y install tar python-dnf-plugins-core gcc deltarpm rpm-build sudo 'perl(Archive::Tar)' 'perl(Archive::Zip)' 'perl(IO::Uncompress::Bunzip2)' 'perl(LWP::UserAgent)' 'perl(Module::Build)' 'perl(Module::CoreList)' 'perl(Module::ExtractUse)' 'perl(Parse::CPAN::Packages)' 'perl(Pod::Simple::TextContent)' 'perl(Text::Autoformat)' 'perl(YAML)'
+

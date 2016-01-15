@@ -4,11 +4,15 @@ Build.PL
 Changes
 COPYING
 cpanspec
+Dockerfiles/centos6
+Dockerfiles/fedora22
 MANIFEST			This list of files
 META.yml
+README.md
 t/000.load.t
 TODO
 xt/author/perlcritic.t
 xt/author/pod-coverage.t
+xt/author/pod-spelling.t
 xt/author/pod.t
 META.json

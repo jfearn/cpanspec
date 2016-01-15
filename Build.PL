@@ -36,7 +36,7 @@ my $builder = $class->new(
     license            => 'perl',
     dist_author        => 'Steven Pritchard <steve@cpan.org>',
     dist_version_from  => 'cpanspec',
-    configure_requires => { 'Module::Build' => 0 },
+    configure_requires => {'Module::Build' => 0},
     build_requires     => {
         'Module::Build'            => 0,
         'Archive::Tar'             => 0,
@@ -74,8 +74,16 @@ my $builder = $class->new(
         'Text::Autoformat'         => 0,
         'YAML'                     => 0,
     },
-    script_files => [ 'cpanspec', ],
+    script_files      => ['cpanspec',],
+    install_path      => {'Dockerfiles' => '/usr/share/cpanspec/Dockerfiles',},
+    Dockerfiles_files => {
+        'Dockerfiles/centos6'  => 'Dockerfiles/centos6',
+        'Dockerfiles/fedora22' => 'Dockerfiles/fedora22',
+
+    },
 );
+
+$builder->add_build_element('Dockerfiles');
 
 $builder->create_build_script();
 

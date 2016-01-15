@@ -15,8 +15,8 @@
 use strict;
 use warnings;
 
-our $NAME    = "cpanspec";
-our $VERSION = '1.79';
+my $NAME    = "cpanspec";
+my $VERSION = '2.0_1';
 
 =head1 NAME
 
@@ -242,48 +242,51 @@ use LWP::UserAgent;
 use Parse::CPAN::Packages;
 use Pod::Simple::TextContent;
 use Module::CoreList;
+use Carp;
 
 # Apparently gets pulled in by another module.
 #use Cwd;
 
-our %opt;
+my %opt;
 
-our $help         = 0;
-our $compat       = 0;
-our $perl_version = 0;
-our $addlicense   = 0;
-our $noprefix     = 0;
-our $force        = 0;
-our $stdout       = 0;
-our $packager;
-our $release = 1;
-our $epoch;
-our $disttag       = '%{?dist}';
-our $download_only = (basename($0) eq "cpanget") ? 1 : 0;
-our $buildsrpm     = 0;
-our $buildrpm      = 0;
-our $verbose       = 0;
-our $follow        = 0;
-our $macros        = 0;
-our $source;
-our $cpan    = $ENV{'CPAN'} || "http://www.cpan.org";
-our $yumroot = "";
-our $useyum  = 0;
+my $help         = 0;
+my $compat       = 0;
+my $perl_version = 0;
+my $addlicense   = 0;
+my $noprefix     = 0;
+my $force        = 0;
+my $stdout       = 0;
+my $packager;
+my $release = 1;
+## BUGBUG hmm if a package fails because the current RPM isn't new enough then we have to check the epoch
+### Also if packages use variable length versions we need to set epochs ... e.g. 5.123 < 5.13 in cpan but > in rpm
+my $epoch         = 4;
+my $disttag       = '%{?dist}';
+my $download_only = (basename($0) eq "cpanget") ? 1 : 0;
+my $buildsrpm     = 0;
+my $buildrpm      = 0;
+my $verbose       = 0;
+my $follow        = 0;
+my $macros        = 0;
+my $source;
+my $cpan    = $ENV{'CPAN'} || "http://www.cpan.org";
+my $yumroot = "";
+my $useyum  = 0;
 
-our $home = $ENV{'HOME'} || (getpwuid($<))[7];
+my $home = $ENV{'HOME'} || (getpwuid($<))[7];
 die "Can't locate home directory.  Please define \$HOME.\n"
     if(!defined($home));
 
-our $pkgdetails = "$home/.cpan/sources/modules/02packages.details.txt.gz";
-our $updated    = 0;
+my $pkgdetails = "$home/.cpan/sources/modules/02packages.details.txt.gz";
+my $updated    = 0;
 
-our $packages;
+my $packages;
 
-our @filter_requires;
-our @filter_provides;
-our @add_requires;
-our @add_provides;
-our @add_buildrequires;
+my @filter_requires;
+my @filter_provides;
+my @add_requires;
+my @add_provides;
+my @add_buildrequires;
 
 # env. vars and their macro analogues
 my @MACROS = (
@@ -300,15 +303,27 @@ my @MACROS = (
 );
 
 # this is set after the parameters are passed
-our %macro;
+my %macro;
 
-our %dep_blacklist = (
+my %dep_blacklist = (
     'Win32'              => 1,    # We're not on win32
     'Win32::Process'     => 1,    # We're not on win32
     'Test::Perl::Critic' => 1,    # Too many dependencies
     'ok'                 => 1,    # Side effect of Test::use::ok
     'BaseClass'          => 1,    # Common test class shipped by ourselves
     'TestServer'         => 1,    # Likewise
+);
+
+# deal with modules with incompatible versioning histories.
+# Is there a better way to get rpm to grok 5.562 < 5.57 ?
+# $ rpmdev-vercmp 5.562 5.57
+# 5.562 > 5.57
+# $ rpmdev-vercmp 0:5.562 1:5.57
+# 0:5.562 < 1:5.57
+#
+my %min_versions = (
+    'Exporter'    => 5.57,
+#    'Pod::Simple' => 3.29,
 );
 
 sub print_version {
@@ -547,42 +562,69 @@ sub check_rpm {
 
     if($? != 0) {
 
-        verbose("backtick (rpm) failed with return value $?");
+        verbose("backtick (rpm) failed with return value $?, @out");
         return;
     }
 
     return @out;
 }
 
-sub check_repo {
-    my $dep = shift;
+my %repo_cache;
 
-    # BUGBUG handle yum/dnf detection
+sub check_repo {
+    my $dep     = shift;
+    my $version = shift;
+
+    return($repo_cache{"$dep-$version"}) if(defined($repo_cache{"$dep-$version"}));
+
     my $repoquery = which("dnf");
-    my $opts      = qq{-q provides "$dep"};
+    my $opts      = qq{-q repoquery --qf='%{NAME}' --recent --whatprovides "$dep"};
+    my $opts2     = qq{-q repoquery --provides};
 
     unless($repoquery) {
         $repoquery = which("repoquery");
-        $opts      = qq{--whatprovides "$dep"};
-        $opts = qq{--installroot $yumroot -c $yumroot/etc/yum.conf --whatprovides "$dep"}
+        $opts      = qq{ --qf='%{NAME}' --whatprovides "$dep" | sort | tail -n1};
+        $opts
+            = qq{--installroot $yumroot -c $yumroot/etc/yum.conf --whatprovides "$dep" | sort | tail -n1}
             if($yumroot);
+        $opts2 = qq{-q  --provides};
     }
 
-    verbose("Running $repoquery to check for $dep. This may take a while.");
-    my @out = qx/$repoquery $opts/;
+    my $cmd = qq{$repoquery $opts};
+    verbose(qq{Running '$cmd', this may take a while.});
+    my $package = qx/$cmd/;
+    chomp($package);
 
     if($? != 0) {
-        verbose("backtick (repoquery) failed with return value $?");
+        verbose("backtick (repoquery) failed with return value $? $@");
         return;
     }
 
-    return grep {/^\S+-[^-]+-[^-]+$/} @out;
+    # if we have versioned requires then we need to work around the stupid
+    # rpm descison that unversioned provides matches any version.
+    if($package && $version) {
+        $cmd = qq{$repoquery $opts2 "$package" | grep '$package = ' | sed -e 's/^.* =//g' -e 's/\-[^-]*\$//g'};
+        verbose(qq{Running '$cmd', this may take a long while.});
+
+        my $prov_ver = qx/$cmd/;
+        chomp($prov_ver);
+        if(!defined($prov_ver) || $prov_ver eq "" || $version > $prov_ver) {
+            verbose("$version <= $prov_ver");
+            return;
+        }
+    }
+
+    $repo_cache{"$dep-$version"} = $package;
+
+    return $package;
 }
 
 sub check_dep {
-    my $module = shift;
+    my $module  = shift;
+    my $version = shift;
 
-    return(check_rpm("perl($module)") || check_repo("perl($module)"));
+    return(check_repo("perl($module)", $version))
+        ; # || check_rpm("perl($module)")); ## BUGBUG how do we get rpm to do *versioned* provides?
 }
 
 sub which {
@@ -591,7 +633,7 @@ sub which {
             return "$path/$bin" if -x "$path/$bin";
         }
     }
-    verbose("Cannot find " . join(" or ", @_));
+##    verbose("Cannot find " . join(" or ", @_));
     return;
 }
 
@@ -651,10 +693,10 @@ if(!$packager or $packager eq "\%packager") {
         . "  Please add or use --packager option.\n";
 }
 
-our %corelist;
+my %corelist;
 
 if($perl_version) {
-    die("Unknown perl version: $perl_version. (Known versions: "
+    die("Unknown lerl version: $perl_version. (Known versions: "
             . join(", ", keys %Module::CoreList::version) . ")")
         unless exists $Module::CoreList::version{$perl_version};
     %corelist = %{$Module::CoreList::version{$perl_version}};
@@ -685,10 +727,7 @@ else {
     while(my $provides = <$rpm>) {
         chomp $provides;
 
-## BUGBUG the if skips many modules supplied in core perl rpm ...
-##        if ($provides=~/^perl\(([^\)]+)\)(?:\s+=\s+(\S+))\s*$/) {
-        if($provides =~ /^perl\(([^\)]+)\)/) {
-            $provides =~ /^perl\(([^\)]+)\)(?:\s+=\s+(\S+))\s*$/;
+        if($provides =~ /^perl\(([^\)]+)\)(?:\s+=\s+(\S+))?\s*$/) {
             $corelist{$1} = defined($2) ? $2 : 0;
         }
     }
@@ -766,9 +805,9 @@ for my $file (@args) {
     die "you can't update perl using cpanspec!" if($module eq 'perl');
 
     ## BUGBUG this really needs to check everything in the module ...
-    my $iscore = defined($corelist{$module} || defined($corelist{$name}));
+    my $iscore = exists($corelist{$module}) || defined($corelist{$name});
     verbose
-        "$module is supplied by core perl, moving package content to site paths to avoid conflicts."
+        "$module or $name is supplied by core perl, moving package content to site paths to avoid conflicts."
         if($iscore);
 
     my $archive;
@@ -874,6 +913,7 @@ for my $file (@args) {
             and $_ ne "INSTALL"
             and $_ ne "SIGNATURE"
             and $_ ne "META.yml"
+            and $_ ne "META.json"
             and $_ ne "NINJA"
             and $_ ne "configure"
             and $_ ne "config.guess"
@@ -990,10 +1030,17 @@ for my $file (@args) {
 
     # BUGBUG only works for most simple case
     if($makecontent =~ /LIBS\s*=>\s*\[(.*)\]/) {
+##verbose($makecontent);
         foreach my $lib (split(/\s+/, $1)) {
             $lib =~ s/-l//;
             $lib =~ s/['"]//g;
             next if($lib eq 'm');
+
+            # BUGBUG blows up on variables :(
+            if($lib =~ /\$/) {
+                verbose("Can't handle LIBS with variables in them :(");
+                next;
+            }
             push(@add_requires,      "$lib");
             push(@add_buildrequires, "$lib-devel");
         }
@@ -1115,7 +1162,7 @@ for my $file (@args) {
     $license = "CHECK(GPL+ or Artistic)" if(!$license);
 
     # Add build dependencies for modules used in tests.
-    my @tests;    # = grep { $_ eq "test.pl" or $_ =~ /^t\/.*\.t$/ } @files;
+    my @tests = grep {$_ eq "test.pl" or $_ =~ /^t\/.*\.t$/} @files;
     use Module::ExtractUse;
     my %bogus_dep = ();
     for my $testfile (@tests) {
@@ -1257,6 +1304,9 @@ END
 
     for my $dep (sort(keys(%build_requires))) {
         next if exists $dep_blacklist{$dep};
+
+        $build_requires{$dep} = max($build_requires{$dep}, ($min_versions{$dep} || 0));
+
         if(exists($corelist{$dep})
             && $corelist{$dep} ge $build_requires{$dep})
         {
@@ -1276,17 +1326,19 @@ END
                     verbose("$dep for $module already added to args");
                     $build_order{$module} = $count + 1;
                 }
-                elsif(check_dep($dep)) {
-                    verbose("$dep is available, skipping.");
+                elsif(check_dep($dep, $build_requires{$dep})) {
+                    verbose("$dep >= $build_requires{$dep} is available, skipping.");
                 }
                 else {
-                    print("$dep is not available for $module, adding it to the list.\n");
+                    print(
+                        "$dep >= $build_requires{$dep} is not available for $module, adding it to the list.\n"
+                    );
                     push(@args, $dep);
                 }
             }
         }
         printf $spec "%-16s%s", "BuildRequires:", "perl($dep)";
-        print $spec (" >= " . $build_requires{$dep})
+        print $spec (" >= " . max($build_requires{$dep}, ($min_versions{$dep} || 0)))
             if($build_requires{$dep});
         print $spec "\n";
     }
@@ -1298,9 +1350,12 @@ END
     for my $dep (sort(keys(%requires))) {
         next if(!$compat and exists($corelist{$dep}));
         printf $spec "%-16s%s", "Requires:", "perl($dep)";
-        print $spec (" >= " . $requires{$dep}) if($requires{$dep});
+        print $spec (" >= " . max($requires{$dep}, ($min_versions{$dep} || 0)))
+            if($requires{$dep});
         print $spec "\n";
     }
+
+    printf $spec "%-16s%s\n", "Provides:", "perl($module) = $epoch:$version";
 
     for my $dep (@add_requires) {
         printf $spec "%-16s%s\n", "Requires:", $dep;
@@ -1380,16 +1435,27 @@ END
     }
 
     my $instdir = $iscore ? 'site' : 'vendor';
+    my $paths
+        = qq{INSTALLVENDORMAN3DIR=$macro{buildroot}%{perlvendorman3} INSTALLVENDORMAN1DIR=$macro{buildroot}%{perlvendorman1}};
+
+    # For packages that override core packages
+    $paths
+        = "INSTALLSITEMAN3DIR=/usr/local/share/man/man3 INSTALLSITEMAN1DIR=/usr/local/share/man/man1"
+        if($iscore);
 
     if($usebuildpl) {
+        $paths = lc($paths);
+
         print $spec <<END;
-\%{__perl} Build.PL installdirs=$instdir@{[$noarch ? '' : qq{ optimize="$macro{optimize}"} ]}
+\%{__perl} Build.PL installdirs=$instdir@{[$noarch ? '' : qq{ optimize="$macro{optimize}"} ]} $paths
+\%{__perl} -p -i -e 's/^Module::Build->VERSION/#Module::Build->VERSION/g' Build
 ./Build
 END
     }
     else {
+
         print $spec <<END;
-\%{__perl} Makefile.PL INSTALLDIRS=$instdir@{[$noarch ? '' : qq{ OPTIMIZE="$macro{optimize}"}]}
+\%{__perl} Makefile.PL PREREQ_FATAL=1 INSTALLDIRS=$instdir@{[$noarch ? '' : qq{ OPTIMIZE="$macro{optimize}"}]} $paths
 END
 
         print $spec "\%{__perl} -pi -e 's/^\\tLD_RUN_PATH=[^\\s]+\\s*/\\t/' Makefile\n"
@@ -1412,7 +1478,7 @@ END
     }
     else {
         print $spec <<END;
-make pure_install PERL_INSTALL_ROOT=$macro{buildroot}
+make pure_install PERL_INSTALL_ROOT=$macro{buildroot} $paths
 
 find $macro{buildroot} -type f -name .packlist -exec rm -f {} \\;
 END
@@ -1441,12 +1507,10 @@ END
         push(@doc, "COPYING", "Artistic");
     }
 
-    if($iscore) {
-        print $spec <<END;
+    print $spec <<END;
 find $macro{buildroot} -type f -print | sed "s\@^$macro{buildroot}\@\@g" > filelist
 
 END
-    }
 
     print $spec <<END;
 \%check@{[($compat ? ' || :' : '')]}
@@ -1480,42 +1544,18 @@ rm -rf $macro{buildroot}@{[
 
 END
 
-    if($iscore) {
-        print $spec <<END;
+    print $spec <<END;
 \%files -f filelist
 \%defattr(-,root,root,-)
 \%doc @doc
 END
-    }
-    else {
-        print $spec <<END;
-\%files
-\%defattr(-,root,root,-)
-\%doc @doc
-END
-
-        if($scripts) {
-            print $spec "\%{_bindir}/*\n";
-            print $spec "\%{_mandir}/man1/*\n";
-        }
-
-        if($noarch) {
-            print $spec "$lib/*\n";
-        }
-        else {
-            print $spec "$lib/auto/*\n$lib/" . (split /::/, $module)[0] . "*\n";
-        }
-
-        print $spec <<END;
-\%{_mandir}/man3/*
-END
-    }
 
     print $spec <<END;
 
 \%changelog
 * $date $packager $version-$release
 - Specfile autogenerated by $NAME $VERSION.
+
 END
 
     $spec->close();
@@ -1542,16 +1582,19 @@ if($buildrpm && $follow) {
             system("sudo yum-builddep -t -y $spec");
         }
         build_rpm($spec);
+        my $dirs = './noarch/';
+        $dirs .= ' ./x86_64/' if(-d './x86_64/');
         if($dnf) {
-            system(
-                'find ./noarch/ ./x86_64/ -type f | xargs --no-run-if-empty sudo dnf -q -y install'
-            );
+            system(qq{find $dirs -type f | xargs --no-run-if-empty sudo dnf -y install});
         }
         else {
-            system(
-                'find ./noarch/ ./x86_64/ -type f | xargs --no-run-if-empty sudo yum -q -y install'
-            );
+            system(qq{find $dirs -type f | xargs --no-run-if-empty sudo yum -y install});
         }
     }
+}
+
+sub max {
+    my($x, $y) = @_;
+    return(($x, $y)[$x < $y]);
 }
 
