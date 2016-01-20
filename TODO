@@ -22,35 +22,12 @@ Add option to use local spec file
 Need to generate a full list for dep build order, including those that can be built at the same time
 
 cs-docker
-  * create this command to build/run docker instances
-  * Make it use Dockerfiles/$distribution and Dockerfiles/$distribution.repo
-  * mkdir -p $HOME/cpanspec/$distribution/$package
-  * selinux
-  * clean up images?
-  * Update README.md with Docker stuff
-  * ship in cpanspec-docker sub package
+  * Allow support for supplying multiple modules to cs-docker
+  * Make sure when cpanspec gets multiple packages on the cli it always build them in the order supplied
   * catch <CTRL>-C
+  * might need to clean out work_dir to avoid artifacts polluting output
 
 dist-import
   * include ??
   * make --import take a list of srpms
-
-for pkg in perl-MooseX-Method perl-VCI perl-Crypt-Blowfish perl-Tie-EncryptedHash perl-Bytes-Random-Secure perl-Math-Prime-Util-GMP perl-Math-Prime-Util perl-Convert-ASCII-Armour perl-Class-Loader perl-Crypt-Twofish perl-Crypt-RIPEMD160 perl-Crypt-IDEA perl-Crypt-CAST5_PP perl-Alt-Crypt-RSA-BigInt perl-Crypt-OpenPGP perl-Crypt-SMIME perl-Data-HexDump perl-Authen-Radius perl-Devel-StackTrace perl-Email-Date perl-TheSchwartz ; do
- echo "$pkg";
- cd $pkg;
- rhpkg build;
- brew tag-build eng-rhel-7 `rhpkg verrel`;
- brew wait-repo eng-rhel-7-build --build `rhpkg verrel`;
- cd ..;
-done
-
-$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-
-WTF :: Bugzilla::5.0.1 is supplied by core perl, moving package content to site paths to avoid conflicts.
-
-$ ./cs-docker --build --docker_dir ~/Source/Dockerfiles/ --image eng-rhel-7
-$ ./cs-docker --image eng-rhel-7 --file /home/jfearn/public_html/bugzilla-devel-5.0/Bugzilla-5.0.1-1.tar.gz 
-
-
-$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 
