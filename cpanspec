@@ -14,6 +14,8 @@
 
 use strict;
 use warnings;
+use bignum;
+$! = 1;
 
 my $NAME    = "cpanspec";
 my $VERSION = '2.0_1';
@@ -243,6 +245,8 @@ use Parse::CPAN::Packages;
 use Pod::Simple::TextContent;
 use Module::CoreList;
 use Carp;
+use Perl::Version;
+use Module::ExtractUse 0.33;
 
 # Apparently gets pulled in by another module.
 #use Cwd;
@@ -275,7 +279,7 @@ my $useyum  = 0;
 
 my $home = $ENV{'HOME'} || (getpwuid($<))[7];
 die "Can't locate home directory.  Please define \$HOME.\n"
-    if(!defined($home));
+    if (!defined($home));
 
 my $pkgdetails = "$home/.cpan/sources/modules/02packages.details.txt.gz";
 my $updated    = 0;
@@ -321,10 +325,7 @@ my %dep_blacklist = (
 # $ rpmdev-vercmp 0:5.562 1:5.57
 # 0:5.562 < 1:5.57
 #
-my %min_versions = (
-    'Exporter'    => 5.57,
-#    'Pod::Simple' => 3.29,
-);
+my %min_versions = ('Exporter' => '5.57',);
 
 sub print_version {
     print "$NAME version $VERSION\n";
@@ -332,11 +333,11 @@ sub print_version {
 }
 
 sub verbose {
-    print STDERR @_, "\n" if($verbose);
+    print STDERR @_, "\n" if ($verbose);
 }
 
 sub fetch {
-    my($url, $file) = @_;
+    my ($url, $file) = @_;
     my @locations = ();
 
     verbose("Fetching $file from $url...");
@@ -349,30 +350,30 @@ LOOP: $request = HTTP::Request->new('GET' => $url)
         or die "HTTP::Request->new() failed: $!\n";
 
     my @buf = stat($file);
-    $request->if_modified_since($buf[9]) if(@buf);
+    $request->if_modified_since($buf[9]) if (@buf);
 
     # FIXME - Probably should do $ua->request() here and skip loop detection.
     my $response = $ua->simple_request($request)
         or die "LWP::UserAgent->simple_request() failed: $!\n";
 
     push(@locations, $url);
-    if($response->code eq "301" or $response->code eq "302") {
+    if ($response->code eq "301" or $response->code eq "302") {
         $url = $response->header('Location');
         die "Redirect loop detected! " . join("\n ", @locations, $url) . "\n"
-            if(grep {$url eq $_} @locations);
+            if (grep { $url eq $_ } @locations);
         goto LOOP;
     }
 
-    if($response->is_success) {
+    if ($response->is_success) {
         my $fh = new FileHandle ">$file"
             or die "Can't write to $file: $!\n";
         print $fh $response->content;
         $fh->close();
 
         my $last_modified = $response->last_modified;
-        utime(time, $last_modified, $file) if($last_modified);
+        utime(time, $last_modified, $file) if ($last_modified);
     }
-    elsif($response->code eq "304") {
+    elsif ($response->code eq "304") {
         verbose("$file is up to date.");
     }
     else {
@@ -385,9 +386,9 @@ sub mkdir_p {
 
     my @path = split '/', $dir;
 
-    for(my $n = 0; $n < @path; $n++) {
-        my $partial = "/" . join("/", @path[0 .. $n]);
-        if(!-d $partial) {
+    for (my $n = 0; $n < @path; $n++) {
+        my $partial = "/" . join("/", @path[ 0 .. $n ]);
+        if (!-d $partial) {
             verbose("mkdir($partial)");
             mkdir $partial or die "mkdir($partial) failed: $!\n";
         }
@@ -395,11 +396,11 @@ sub mkdir_p {
 }
 
 sub update_packages {
-    return 1 if($updated);
+    return 1 if ($updated);
 
     verbose("Updating $pkgdetails...");
 
-    mkdir_p(dirname($pkgdetails)) if(!-d dirname($pkgdetails));
+    mkdir_p(dirname($pkgdetails)) if (!-d dirname($pkgdetails));
 
     fetch("$cpan/modules/" . basename($pkgdetails), $pkgdetails);
 
@@ -413,21 +414,29 @@ sub build_rpm {
     my $rpmbuild = which("rpmbuild", "rpm");
 
     verbose("Building " . ($buildrpm ? "rpms" : "source rpm") . " from $spec");
+    if (!-d "$spec-build") {
+        verbose("mkdir($spec-build)");
+        mkdir "$spec-build" or die "mkdir($spec-build) failed: $!\n";
+    }
+    if (!-d "$spec-build/RPMS") {
+        verbose("mkdir($spec-build/RPMS)");
+        mkdir "$spec-build/RPMS" or die "mkdir($spec-build/RPMS) failed: $!\n";
+    }
 
     # From Fedora CVS Makefile.common.
-    if( system($rpmbuild, "--define",
-            "_sourcedir $dir", "--define",
-            "_builddir $dir",  "--define",
-            "_srcrpmdir $dir", "--define",
-            "_rpmdir $dir", ($buildrpm ? "-ba" : ("-bs", "--nodeps")),
+    if (system($rpmbuild, "--define",
+            "_sourcedir $dir",             "--define",
+            "_builddir $dir/$spec-build",  "--define",
+            "_srcrpmdir $dir/$spec-build", "--define",
+            "_rpmdir $dir/$spec-build/RPMS", ($buildrpm ? "-ba" : ("-bs", "--nodeps")),
             $spec
         ) != 0
         )
     {
-        if($? == -1) {
+        if ($? == -1) {
             die "Failed to execute $rpmbuild: $!\n";
         }
-        elsif(WIFSIGNALED($?)) {
+        elsif (WIFSIGNALED($?)) {
             die "$rpmbuild died with signal " . WTERMSIG($?)
                 . (($? & 128) ? ", core dumped\n" : "\n");
         }
@@ -441,11 +450,11 @@ sub list_files {
     my $archive = $_[0];
     my $type    = $_[1];
 
-    if($type eq 'tar') {
+    if ($type eq 'tar') {
         return $archive->list_files();
     }
-    elsif($type eq 'zip') {
-        return map {$_->fileName();} $archive->members();
+    elsif ($type eq 'zip') {
+        return map { $_->fileName(); } $archive->members();
     }
 }
 
@@ -454,10 +463,10 @@ sub extract {
     my $type     = $_[1];
     my $filename = $_[2];
 
-    if($type eq 'tar') {
+    if ($type eq 'tar') {
         return $archive->get_content($filename);
     }
-    elsif($type eq 'zip') {
+    elsif ($type eq 'zip') {
         return $archive->contents($filename);
     }
 }
@@ -465,52 +474,52 @@ sub extract {
 sub get_description {
     my %args = @_;
     my $pm   = "";
-    my($summary, $description);
+    my ($summary, $description);
 
     my $path = $args{module};
     $path =~ s,::,/,g;
     my @pmfiles = ("$args{path}/lib/$path.pod", "$args{path}/lib/$path.pm");
-    if($args{module} =~ /::/) {
+    if ($args{module} =~ /::/) {
         my @tmp = split '/', $path;
         my $last = pop @tmp;
         push(@pmfiles, "$args{path}/lib/$last.pod", "$args{path}/lib/$last.pm");
     }
     do {
         push(@pmfiles, "$args{path}/$path.pod", "$args{path}/$path.pm");
-    } while($path =~ s,^[^/]+/,,);
+    } while ($path =~ s,^[^/]+/,,);
     push(@pmfiles, "$args{path}/$args{module}")
-        if($args{module} !~ /::/);
+        if ($args{module} !~ /::/);
 
     for my $file (@pmfiles) {
-        $pm = (grep {$_ eq $file or $_ eq "./$file"}
-                list_files($args{archive}, $args{type}))[0];
+        $pm = (grep { $_ eq $file or $_ eq "./$file" } list_files($args{archive}, $args{type}))
+            [0];
         last if $pm;
     }
 
-    if($pm) {
+    if ($pm) {
         verbose "Trying to fetch description from $pm...";
 
-        if(my $content = extract($args{archive}, $args{type}, $pm)) {
+        if (my $content = extract($args{archive}, $args{type}, $pm)) {
             my $parser = Pod::Simple::TextContent->new()
                 or die "Pod::Simple::TextContent->new() failed: $!\n";
             $parser->no_whining(1);
             my $rendered = "";
             $parser->output_string(\$rendered);
             $parser->parse_string_document($content);
-            if($parser->content_seen and $rendered) {
-                if($rendered =~ /DESCRIPTION\s+(\S.*?)\n\n/s) {
+            if ($parser->content_seen and $rendered) {
+                if ($rendered =~ /DESCRIPTION\s+(\S.*?)\n\n/s) {
                     $description = $1;
                 }
-                if($rendered =~ /NAME\s*$args{module}\s[-\s]*(\S[^\n]*)/s) {
-                    if($1 ne "SYNOPSIS") {
+                if ($rendered =~ /NAME\s*$args{module}\s[-\s]*(\S[^\n]*)/s) {
+                    if ($1 ne "SYNOPSIS") {
                         $summary = $1;
                         $summary =~ s/[.\s]+$//;
                         $summary =~ s/^(?:An?|The)\s+//i;
                         $summary = ucfirst($summary);
                     }
                 }
-                return($description, $summary)
-                    if(defined($description));
+                return ($description, $summary)
+                    if (defined($description));
             }
         }
         else {
@@ -523,20 +532,20 @@ sub get_description {
         }
     }
 
-    if(my $readme
-        = (sort {length($a) <=> length($b) or $a cmp $b} (grep /README/i, @{$args{files}}))
-        [0])
+    if (my $readme
+        = (sort { length($a) <=> length($b) or $a cmp $b } (grep /README/i, @{ $args{files} }))[0]
+        )
     {
         verbose "Trying to fetch description from $readme...";
 
-        if(my $content = extract($args{archive}, $args{type}, "$args{path}/$readme")) {
+        if (my $content = extract($args{archive}, $args{type}, "$args{path}/$readme")) {
             $content =~ s/\r//g;    # Why people use DOS text, I'll never understand.
             for my $string (split "\n\n", $content) {
                 $string =~ s/^\n+//;
-                if((my @tmp = split "\n", $string) > 2
+                if ((my @tmp = split "\n", $string) > 2
                     and $string !~ /^[#\-=]/)
                 {
-                    return($string, undef);
+                    return ($string, undef);
                 }
             }
         }
@@ -550,7 +559,7 @@ sub get_description {
         }
     }
 
-    return(undef, undef);
+    return (undef, undef);
 }
 
 sub check_rpm {
@@ -560,7 +569,7 @@ sub check_rpm {
 
     my @out = `$rpm -q --whatprovides "$dep"`;
 
-    if($? != 0) {
+    if ($? != 0) {
 
         verbose("backtick (rpm) failed with return value $?, @out");
         return;
@@ -575,18 +584,19 @@ sub check_repo {
     my $dep     = shift;
     my $version = shift;
 
-    return($repo_cache{"$dep-$version"}) if(defined($repo_cache{"$dep-$version"}));
+    return ($repo_cache{"$dep-$version"})
+        if (defined($repo_cache{"$dep-$version"}));
 
     my $repoquery = which("dnf");
     my $opts      = qq{-q repoquery --qf='%{NAME}' --recent --whatprovides "$dep"};
     my $opts2     = qq{-q repoquery --provides};
 
-    unless($repoquery) {
+    unless ($repoquery) {
         $repoquery = which("repoquery");
         $opts      = qq{ --qf='%{NAME}' --whatprovides "$dep" | sort | tail -n1};
         $opts
             = qq{--installroot $yumroot -c $yumroot/etc/yum.conf --whatprovides "$dep" | sort | tail -n1}
-            if($yumroot);
+            if ($yumroot);
         $opts2 = qq{-q  --provides};
     }
 
@@ -595,21 +605,34 @@ sub check_repo {
     my $package = qx/$cmd/;
     chomp($package);
 
-    if($? != 0) {
+    if ($? != 0) {
         verbose("backtick (repoquery) failed with return value $? $@");
         return;
     }
 
-    # if we have versioned requires then we need to work around the stupid
+    if (!defined($package) || $package eq "") {
+        verbose(qq{No package supplies $dep});
+        return;
+    }
+
+    # if we have versioned requires then we need to work around the
     # rpm descison that unversioned provides matches any version.
-    if($package && $version) {
-        $cmd = qq{$repoquery $opts2 "$package" | grep '$package = ' | sed -e 's/^.* =//g' -e 's/\-[^-]*\$//g'};
+    if ($version ne "0") {
+        $cmd
+            = qq{$repoquery $opts2 "$package" | grep '$dep = ' | sed -e 's/^.* =//g' -e 's/\-[^-]*\$//g'};
         verbose(qq{Running '$cmd', this may take a long while.});
 
         my $prov_ver = qx/$cmd/;
         chomp($prov_ver);
-        if(!defined($prov_ver) || $prov_ver eq "" || $version > $prov_ver) {
-            verbose("$version <= $prov_ver");
+
+        # chop off epoch
+        $prov_ver =~ s/^[^:]*://g if (defined($prov_ver));
+        verbose("pov_version: $prov_ver\n");
+        if (   !defined($prov_ver)
+            || $prov_ver eq ""
+            || (Perl::Version->new($version) > Perl::Version->new($prov_ver)))
+        {
+            verbose("Version required is greater than version provided: $version > $prov_ver");
             return;
         }
     }
@@ -623,8 +646,8 @@ sub check_dep {
     my $module  = shift;
     my $version = shift;
 
-    return(check_repo("perl($module)", $version))
-        ; # || check_rpm("perl($module)")); ## BUGBUG how do we get rpm to do *versioned* provides?
+## BUGBUG how do we get rpm to do *versioned* provides?
+    return (check_repo("perl($module)", $version) || check_rpm("perl($module)"));
 }
 
 sub which {
@@ -669,17 +692,17 @@ GetOptions(
     'prefer-macros|m'     => \$macros,
     'yumroot=s'           => \$yumroot,
     'useyum'              => \$useyum,
-) or pod2usage({-exitval => 1, -verbose => 0});
+) or pod2usage({ -exitval => 1, -verbose => 0 });
 
-pod2usage({-exitval => 0, -verbose => 1}) if($help);
-pod2usage({-exitval => 1, -verbose => 0}) if(!@ARGV);
+pod2usage({ -exitval => 0, -verbose => 1 }) if ($help);
+pod2usage({ -exitval => 1, -verbose => 0 }) if (!@ARGV);
 
 # Have to use yum to build and follow
-if($follow && $buildrpm) {
+if ($follow && $buildrpm) {
     $useyum = 1;
 }
 
-%macro = %{$MACROS[$macros]};
+%macro = %{ $MACROS[$macros] };
 
 my $prefix = $noprefix ? "" : "perl-";
 
@@ -688,31 +711,30 @@ $packager = $packager || `$rpm --eval '\%packager'`;
 
 chomp $packager;
 
-if(!$packager or $packager eq "\%packager") {
-    die "\%packager not defined in ~/.rpmmacros."
-        . "  Please add or use --packager option.\n";
+if (!$packager or $packager eq "\%packager") {
+    die "\%packager not defined in ~/.rpmmacros." . "  Please add or use --packager option.\n";
 }
 
 my %corelist;
 
-if($perl_version) {
+if ($perl_version) {
     die("Unknown lerl version: $perl_version. (Known versions: "
             . join(", ", keys %Module::CoreList::version) . ")")
         unless exists $Module::CoreList::version{$perl_version};
-    %corelist = %{$Module::CoreList::version{$perl_version}};
+    %corelist = %{ $Module::CoreList::version{$perl_version} };
 }
 else {
     my $rpm;
 
-    if($useyum) {
+    if ($useyum) {
         my $repoquery = which("dnf");
         my $opts      = qq{-q repoquery --provides perl|};
 
-        unless($repoquery) {
+        unless ($repoquery) {
             $repoquery = which("repoquery");
             $opts      = qq{--provides perl|};
-            $opts = qq{--installroot $yumroot -c $yumroot/etc/yum.conf --provides perl|}
-                if($yumroot);
+            $opts      = qq{--installroot $yumroot -c $yumroot/etc/yum.conf --provides perl|}
+                if ($yumroot);
         }
 
         my $cmd = qq{$repoquery $opts};
@@ -724,10 +746,10 @@ else {
             or warn "Failed to execute rpm: $!\n";
     }
 
-    while(my $provides = <$rpm>) {
+    while (my $provides = <$rpm>) {
         chomp $provides;
 
-        if($provides =~ /^perl\(([^\)]+)\)(?:\s+=\s+(\S+))?\s*$/) {
+        if ($provides =~ /^perl\(([^\)]+)\)(?:\s+=\s+(\S+))?\s*$/) {
             $corelist{$1} = defined($2) ? $2 : 0;
         }
     }
@@ -738,28 +760,28 @@ my @processed = ();
 
 update_packages();
 $packages = Parse::CPAN::Packages->new($pkgdetails)
-    if(!defined($packages));
+    if (!defined($packages));
 die "Parse::CPAN::Packages->new() failed: $!\n"
-    if(!defined($packages));
+    if (!defined($packages));
 
 my %build_order;
 my $count = -1;
 
 for my $file (@args) {
-    my($name, $version, $type);
+    my ($name, $version, $type);
     $count++;
 
-    if($file =~ /^(?:.*\/)?(.*)-(?:v\.?)?([^-]+)\.(tar)\.(?:gz|bz2)$/) {
+    if ($file =~ /^(?:.*\/)?(.*)-(?:v\.?)?([^-]+)\.(tar)\.(?:gz|bz2)$/) {
         $name    = $1;
         $version = $2;
         $type    = $3;
     }
-    elsif($file =~ /^(?:.*\/)?(.*)-(?:v\.?)?([^-]+)\.tgz$/) {
+    elsif ($file =~ /^(?:.*\/)?(.*)-(?:v\.?)?([^-]+)\.tgz$/) {
         $name    = $1;
         $version = $2;
         $type    = 'tar';
     }
-    elsif($file =~ /^(?:.*\/)?(.*)-(?:v\.?)?([^-]+)\.(zip)$/) {
+    elsif ($file =~ /^(?:.*\/)?(.*)-(?:v\.?)?([^-]+)\.(zip)$/) {
         $name    = $1;
         $version = $2;
         $type    = $3;
@@ -770,8 +792,8 @@ for my $file (@args) {
         $file =~ s/-/::/g;
 
         # Look up $file in 02packages.details.txt.
-        my($m, $d);
-        if($m = $packages->package($file) and $d = $m->distribution()) {
+        my ($m, $d);
+        if ($m = $packages->package($file) and $d = $m->distribution()) {
             $source = $cpan . "/authors/id/" . $d->prefix();
             $file   = basename($d->filename());
             fetch($source, $file);
@@ -779,13 +801,13 @@ for my $file (@args) {
             $name    = $d->dist();
             $version = $d->version();
             $version =~ s/^v\.?//;
-            if($file =~ /\.(tar)\.gz$/) {
+            if ($file =~ /\.(tar)\.gz$/) {
                 $type = $1;
             }
-            elsif($file =~ /\.tgz$/) {
+            elsif ($file =~ /\.tgz$/) {
                 $type = 'tar';
             }
-            elsif($file =~ /\.(zip)$/) {
+            elsif ($file =~ /\.(zip)$/) {
                 $type = $1;
             }
             else {
@@ -802,29 +824,29 @@ for my $file (@args) {
     my $module = $name;
     $module =~ s/-/::/g;
 
-    die "you can't update perl using cpanspec!" if($module eq 'perl');
+    die "you can't update perl using cpanspec!" if ($module eq 'perl');
 
     ## BUGBUG this really needs to check everything in the module ...
     my $iscore = exists($corelist{$module}) || defined($corelist{$name});
     verbose
         "$module or $name is supplied by core perl, moving package content to site paths to avoid conflicts."
-        if($iscore);
+        if ($iscore);
 
     my $archive;
     my $path;
-    if($type eq 'tar') {
+    if ($type eq 'tar') {
         my $f = $file;
-        if($file =~ /\.bz2$/) {
-            eval {use IO::Uncompress::Bunzip2;};
+        if ($file =~ /\.bz2$/) {
+            eval { use IO::Uncompress::Bunzip2; };
 
-            if($@) {
+            if ($@) {
                 warn "Failed to load IO::Uncompress::Bunzip2: $@\n";
                 warn "Skipping $file...\n";
                 next;
             }
 
             $f = IO::Uncompress::Bunzip2->new($file);
-            if(!defined($f)) {
+            if (!defined($f)) {
                 warn "IO::Uncompress::Bunzip2->new() failed on $file: $!\n";
                 next;
             }
@@ -832,33 +854,33 @@ for my $file (@args) {
         $archive = Archive::Tar->new($f, 1)
             or die "Archive::Tar->new() failed: $!\n";
     }
-    elsif($type eq 'zip') {
+    elsif ($type eq 'zip') {
         $archive = Archive::Zip->new()
             or die "Archive::Zip->new() failed: $!\n";
-        die "Read error on $file\n" unless($archive->read($file) == AZ_OK);
+        die "Read error on $file\n" unless ($archive->read($file) == AZ_OK);
     }
 
     my @files;
 
     my $bogus = 0;
     for my $entry (list_files($archive, $type)) {
-        next if($type eq 'tar' and $entry eq 'pax_global_header');
+        next if ($type eq 'tar' and $entry eq 'pax_global_header');
 
-        if($entry !~ /^(?:.\/)?($name(?:-(?:v\.?)?$version)?)(?:\/|$)/) {
+        if ($entry !~ /^(?:.\/)?($name(?:-(?:v\.?)?$version)?)(?:\/|$)/) {
             warn "BOGUS PATH DETECTED: $entry\n";
             $bogus++;
             next;
         }
-        elsif(!defined($path)) {
+        elsif (!defined($path)) {
             $path = $1;
         }
 
         $entry =~ s,^(?:.\/)?$name(?:-(?:v\.?)?$version)?/,,;
-        next if(!$entry);
+        next if (!$entry);
 
         push(@files, $entry);
     }
-    if($bogus) {
+    if ($bogus) {
         warn "Skipping $file with $bogus path elements!\n";
         next;
     }
@@ -876,7 +898,7 @@ for my $file (@args) {
         . basename($file);
     $source =~ s/$version/\%{version}/;
 
-    my($description, $summary) = get_description(
+    my ($description, $summary) = get_description(
         archive  => $archive,
         type     => $type,
         filename => $file,
@@ -887,7 +909,7 @@ for my $file (@args) {
         path     => $path,
     );
 
-    if(defined($description) and $description) {
+    if (defined($description) and $description) {
         $description = autoformat $description,
             {
             "all"     => 1,
@@ -901,9 +923,9 @@ for my $file (@args) {
         $description = "$module Perl module";
     }
 
-    $summary = "$module Perl module" if(!defined($summary));
+    $summary = "$module Perl module" if (!defined($summary));
 
-    my @doc = sort {$a cmp $b} grep {
+    my @doc = sort { $a cmp $b } grep {
                 !/\//
             and !/\.(pl|xs|h|c|pm|in|pod|cfg|inl)$/i
             and !/^\./
@@ -926,6 +948,7 @@ for my $file (@args) {
             and $_ ne "autobuild.sh"
             and $_ ne "pm_to_blib"
             and $_ ne "install.sh"
+            and $_ ne "devel"
     } @files;
 
     my $date = strftime("%a %b %d %Y", localtime);
@@ -934,24 +957,24 @@ for my $file (@args) {
     my $vendorlib = ($noarch ? "vendorlib" : "vendorarch");
     my $lib = "\%{perl_$vendorlib}";
 
-    if(@filter_requires) {
+    if (@filter_requires) {
         my $script = "$name-filter-requires.sh";
         verbose "Writing $script...";
         my $sh;
-        if($force) {
-            rename($script, "$script~") if(-e $script);
+        if ($force) {
+            rename($script, "$script~") if (-e $script);
             $sh = new FileHandle ">$script";
         }
         else {
             $sh = new FileHandle $script, O_WRONLY | O_CREAT | O_EXCL;
         }
-        die "Failed to create $script: $!\n" if(!$sh);
+        die "Failed to create $script: $!\n" if (!$sh);
 
         print $sh "#!/bin/sh\n\n"
             . "\@\@PERL_REQ\@\@ \"\$\@\" | sed -e '/^$filter_requires[0]\$/d'";
         print $sh " \\\n    -e '/^perl\($filter_requires[0]\)\$/d'";
-        if(@filter_requires > 1) {
-            for my $dep (@filter_requires[1 .. $#filter_requires]) {
+        if (@filter_requires > 1) {
+            for my $dep (@filter_requires[ 1 .. $#filter_requires ]) {
                 print $sh " \\\n    -e '/^$dep\$/d'";
                 print $sh " \\\n    -e '/^perl\($dep\)\$/d'";
             }
@@ -959,23 +982,23 @@ for my $file (@args) {
         print $sh "\n";
     }
 
-    if(@filter_provides) {
+    if (@filter_provides) {
         my $script = "$name-filter-provides.sh";
         verbose "Writing $script...";
         my $sh;
-        if($force) {
-            rename($script, "$script~") if(-e $script);
+        if ($force) {
+            rename($script, "$script~") if (-e $script);
             $sh = new FileHandle ">$script";
         }
         else {
             $sh = new FileHandle $script, O_WRONLY | O_CREAT | O_EXCL;
         }
-        die "Failed to create $script: $!\n" if(!$sh);
+        die "Failed to create $script: $!\n" if (!$sh);
 
         print $sh "#!/bin/sh\n\n"
             . "\@\@PERL_PROV\@\@ \"\$\@\" | sed -e '/^$filter_provides[0]\$/d'";
-        if(@filter_provides > 1) {
-            for my $dep (@filter_provides[1 .. $#filter_provides]) {
+        if (@filter_provides > 1) {
+            for my $dep (@filter_provides[ 1 .. $#filter_provides ]) {
                 print $sh " \\\n    -e '/^$dep\$/d'";
             }
         }
@@ -986,25 +1009,25 @@ for my $file (@args) {
     verbose "Writing $specfile...";
 
     my $spec;
-    if($stdout) {
+    if ($stdout) {
         $spec = *STDOUT;
     }
-    elsif($force) {
-        rename($specfile, "$specfile~") if(-e $specfile);
+    elsif ($force) {
+        rename($specfile, "$specfile~") if (-e $specfile);
         $spec = new FileHandle ">$specfile";
     }
     else {
         $spec = new FileHandle "$specfile", O_WRONLY | O_CREAT | O_EXCL;
     }
 
-    if(!$spec) {
+    if (!$spec) {
         warn "Failed to create $specfile: $!\n";
         next;
     }
 
     print $spec
         qq[\%{!?perl_$vendorlib: \%define perl_$vendorlib \%(eval "\`\%{__perl} -V:install$vendorlib\`"; echo \$install$vendorlib)}\n\n]
-        if($compat);
+        if ($compat);
 
     my $license = "";
 
@@ -1012,32 +1035,36 @@ for my $file (@args) {
     my $uses_autoinstall = grep /Module\/AutoInstall.pm/, @files;
     my $scripts = (grep /^(?:bin|scripts?|tools)\//, @files);
     my $makecontent;
-    if(grep /^Makefile\.PL$/, @files
+    if (grep /^Makefile\.PL$/, @files
         and $makecontent = extract($archive, $type, "$path/Makefile.PL"))
     {
         $scripts ||= $makecontent =~ 'install_script';
         $scripts ||=
-            (      $makecontent =~ /EXE_FILES/
-                && $makecontent !~ /EXE_FILES.*\[\s*(qw\(\s*\)\s*)?\]/)
+            ($makecontent =~ /EXE_FILES/ && $makecontent !~ /EXE_FILES.*\[\s*(qw\(\s*\)\s*)?\]/)
             ? 1
             : 0;
     }
-    if(grep /^Build\.PL$/, @files
-        and $makecontent = extract($archive, $type, "$path/Build.PL"))
+    if (grep /^Build\.PL$/, @files and $makecontent = extract($archive, $type, "$path/Build.PL"))
     {
         $scripts ||= $makecontent =~ 'script_files';
     }
 
     # BUGBUG only works for most simple case
-    if($makecontent =~ /LIBS\s*=>\s*\[(.*)\]/) {
+    if ($makecontent =~ /LIBS\s*=>\s*\[(.*)\]/) {
 ##verbose($makecontent);
         foreach my $lib (split(/\s+/, $1)) {
             $lib =~ s/-l//;
             $lib =~ s/['"]//g;
-            next if($lib eq 'm');
+            next if ($lib eq 'm');
+
+            if (!$lib || $lib != /\S/) {
+                $makecontent =~ /LIBS\s*=>\s*\[(.*)\]/s;
+                verbose("Empty lib found for $module: $1");
+                next;
+            }
 
             # BUGBUG blows up on variables :(
-            if($lib =~ /\$/) {
+            if ($lib =~ /\$/) {
                 verbose("Can't handle LIBS with variables in them :(");
                 next;
             }
@@ -1047,7 +1074,7 @@ for my $file (@args) {
     }
 
     # BUGBUG only works for most simple case
-    if($makecontent =~ /ExtUtils::PkgConfig->find\(['"](.*)['"]\)/) {
+    if ($makecontent =~ /ExtUtils::PkgConfig->find\(['"](.*)['"]\)/) {
         my $dep = $1;
         my $cmd
             = q{repoquery -s --whatprovides }
@@ -1058,7 +1085,7 @@ for my $file (@args) {
             = q{dnf -q repoquery -s --whatprovides }
             . $dep
             . q{.\* | head -n1 | perl -p -e 's/-[^-]*.src.rpm//g' | xargs dnf -q repoquery --qf "%{NAME}"}
-            if(which("dnf"));
+            if (which("dnf"));
 
         my $lib = qx/$cmd/;
         chomp($lib);
@@ -1066,79 +1093,79 @@ for my $file (@args) {
         push(@add_buildrequires, "$lib-devel");
     }
 
-    my(%build_requires, %requires);
-    my($yml,            $meta);
-    if(grep /^META\.yml$/, @files and $yml = extract($archive, $type, "$path/META.yml")) {
+    my (%build_requires, %requires);
+    my ($yml,            $meta);
+    if (grep /^META\.yml$/, @files and $yml = extract($archive, $type, "$path/META.yml")) {
 
         # Basic idea borrowed from Module::Depends.
         my $meta;
-        eval {$meta = Load($yml);};
-        if($@) {
+        eval { $meta = Load($yml); };
+        if ($@) {
             warn "Error parsing $path/META.yml: $@";
             goto SKIP;
         }
 
-        %build_requires = %{$meta->{build_requires}}
-            if($meta->{build_requires});
-        %build_requires = (%build_requires, %{$meta->{configure_requires}})
-            if($meta->{configure_requires});
-        %requires = %{$meta->{requires}} if($meta->{requires});
-## BUGBUG recommends often causes circular deps.
+        %build_requires = %{ $meta->{build_requires} }
+            if ($meta->{build_requires});
+        %build_requires = (%build_requires, %{ $meta->{configure_requires} })
+            if ($meta->{configure_requires});
+        %requires = %{ $meta->{requires} } if ($meta->{requires});
+## FIXME recommends often causes circular deps.
 ## Make this optional or make it work better...
-        if(0 && $meta->{recommends}) {
-            for my $dep (keys(%{$meta->{recommends}})) {
+        if (0 && $meta->{recommends}) {
+            for my $dep (keys(%{ $meta->{recommends} })) {
                 $requires{$dep} = $requires{$dep}
                     || $meta->{recommends}->{$dep};
             }
         }
 
         # FIXME - I'm not sure this is sufficient...
-        if($meta->{script_files} or $meta->{scripts}) {
+        if ($meta->{script_files} or $meta->{scripts}) {
             $scripts = 1;
         }
 
-        if($meta->{license}) {
+        if ($meta->{license}) {
 
             # This list of licenses is from the Module::Build::API
             # docs, cross referenced with the list of licenses in
             # /usr/share/rpmlint/config.
-            if($meta->{license} =~ /^perl$/i) {
+            if ($meta->{license} =~ /^perl$/i) {
                 $license = "GPL+ or Artistic";
             }
-            elsif($meta->{license} =~ /^apache$/i) {
+            elsif ($meta->{license} =~ /^apache$/i) {
                 $license = "Apache Software License";
             }
-            elsif($meta->{license} =~ /^artistic$/i) {
+            elsif ($meta->{license} =~ /^artistic$/i) {
                 $license = "Artistic";
             }
-            elsif($meta->{license} =~ /^artistic_?2$/i) {
+            elsif ($meta->{license} =~ /^artistic_?2$/i) {
                 $license = "Artistic 2.0";
             }
-            elsif($meta->{license} =~ /^bsd$/i) {
+            elsif ($meta->{license} =~ /^bsd$/i) {
                 $license = "BSD";
             }
-            elsif($meta->{license} =~ /^gpl$/i) {
+            elsif ($meta->{license} =~ /^gpl$/i) {
                 $license = "GPL+";
             }
-            elsif($meta->{license} =~ /^lgpl$/i) {
+            elsif ($meta->{license} =~ /^lgpl$/i) {
                 $license = "LGPLv2+";
             }
-            elsif($meta->{license} =~ /^mit$/i) {
+            elsif ($meta->{license} =~ /^mit$/i) {
                 $license = "MIT";
             }
-            elsif($meta->{license} =~ /^mozilla$/i) {
+            elsif ($meta->{license} =~ /^mozilla$/i) {
                 $license = "MPL";
             }
-            elsif($meta->{license} =~ /^cc0$/i) {
+            elsif ($meta->{license} =~ /^cc0$/i) {
                 $license = "CC0";
             }
-            elsif($meta->{license} =~ /^open_source$/i) {
+            elsif ($meta->{license} =~ /^open_source$/i) {
                 $license = "OSI-Approved";    # rpmlint will complain
             }
-            elsif($meta->{license} =~ /^unrestricted$/i) {
+            elsif ($meta->{license} =~ /^unrestricted$/i) {
                 $license = "Distributable";
             }
-            elsif($meta->{license} =~ /^restrictive$/i) {
+            elsif ($meta->{license} =~ /^restrictive$/i) {
                 $license = "Non-distributable";
                 warn "License is 'restrictive'."
                     . "  This package should not be redistributed.\n";
@@ -1151,44 +1178,46 @@ for my $file (@args) {
     SKIP:
     }
 
-    if(my @licenses = grep /license|copyright|copying/i, @doc) {
-        if(!$license) {
+    if (my @licenses = grep /license|copyright|copying/i, @doc) {
+        if (!$license) {
             $license = "Distributable, see @licenses";
         }
-        elsif($license =~ /^(OSI-Approved|Distributable|Non-distributable)$/) {
+        elsif ($license =~ /^(OSI-Approved|Distributable|Non-distributable)$/) {
             $license .= ", see @licenses";
         }
     }
-    $license = "CHECK(GPL+ or Artistic)" if(!$license);
+    $license = "CHECK(GPL+ or Artistic)" if (!$license);
 
     # Add build dependencies for modules used in tests.
-    my @tests = grep {$_ eq "test.pl" or $_ =~ /^t\/.*\.t$/} @files;
+    my @tests = grep { $_ eq "test.pl" or $_ =~ /^t\/.*\.t$/ } @files;
     use Module::ExtractUse;
     my %bogus_dep = ();
     for my $testfile (@tests) {
         my $extract_o_matic = Module::ExtractUse->new()
             or die "Module::ExtractUse->new failed: $!\n";
         my $test = extract($archive, $type, $path . '/' . $testfile);
-        if(!defined($test)) {
+        if (!defined($test)) {
             warn "Failed to extract $testfile from $archive: $!\n";
             next;
         }
         $extract_o_matic->extract_use(\$test);
-        for my $dep ($extract_o_matic->array()) {
-            next if($dep eq $module);
+
+        # lots of tests have recursive deps in evals.
+        for my $dep ($extract_o_matic->array_out_of_eval()) {
+            next if ($dep eq $module);
             next if exists $build_requires{$dep};
             next if exists $bogus_dep{$dep};
             my $package = $packages->package($dep);
-            if(!defined($package)) {
+            if (!defined($package)) {
                 $bogus_dep{$dep}++;
 
                 # Don't print this for common false positives
-                unless($dep =~ /^(Config|base|5|lib)/) {
+                unless ($dep =~ /^(Config|base|5|lib)/) {
                     verbose("Module not on CPAN, not adding dependency: $dep");
                 }
                 next;
             }
-            if($package->distribution->dist eq $name) {
+            if ($package->distribution->dist eq $name) {
                 verbose("Dependency $dep provided by ourselves, not adding dependency");
                 next;
             }
@@ -1197,7 +1226,7 @@ for my $file (@args) {
     }
 
     my $usebuildpl = 0;
-    if(grep /^Build\.PL$/, @files) {
+    if (grep /^Build\.PL$/, @files) {
         $build_requires{'Module::Build'} ||= 0;
         $usebuildpl = 1;
     }
@@ -1205,27 +1234,27 @@ for my $file (@args) {
         $build_requires{'ExtUtils::MakeMaker'} ||= 0;
     }
 
-    if(!$usebuildpl) {
+    if (!$usebuildpl) {
 
         # This is an ugly hack to parse any PREREQ_PM in Makefile.PL.
         my $CHILD;
-        if(open($CHILD, "-|") == 0) {
+        if (open($CHILD, "-|") == 0) {
             eval {
                 use subs 'WriteMakefile';
 
                 sub WriteMakefile {
                     my %args = @_;
-                    if(!defined($args{'PREREQ_PM'})) {
+                    if (!defined($args{'PREREQ_PM'})) {
                         return;
                     }
 
                     # Versioned BuildRequires aren't reliably honored by
                     # rpmbuild, but we'll include them anyway as a hint to the
                     # packager.
-                    for my $dep (keys(%{$args{'PREREQ_PM'}})) {
+                    for my $dep (keys(%{ $args{'PREREQ_PM'} })) {
                         print "BuildRequires: $dep";
                         print " " . $args{'PREREQ_PM'}->{$dep}
-                            if($args{'PREREQ_PM'}->{$dep});
+                            if ($args{'PREREQ_PM'}->{$dep});
                         print "\n";
                     }
                 }
@@ -1255,12 +1284,12 @@ for my $file (@args) {
             exit 0;
         }
         else {
-            while(<$CHILD>) {
-                if(/^BuildRequires:\s*(\S+)\s*(\S+)?/) {
+            while (<$CHILD>) {
+                if (/^BuildRequires:\s*(\S+)\s*(\S+)?/) {
                     my $dep     = $1;
                     my $version = 0;
-                    $version = $2 if(defined($2));
-                    $build_requires{$dep} = $version;
+                    $version = $2 if (defined($2));
+                    $build_requires{$dep} = "$version";
                 }
             }
         }
@@ -1272,7 +1301,7 @@ Version:        $version
 Release:        $release$disttag
 END
 
-    print $spec "Epoch:          $epoch\n" if(defined($epoch));
+    print $spec "Epoch:          $epoch\n" if (defined($epoch));
 
     print $spec <<END;
 Summary:        $summary
@@ -1283,14 +1312,14 @@ Source0:        $source
 BuildRoot:      \%{_tmppath}/\%{name}-\%{version}-\%{release}-root-\%(\%{__id_u} -n)
 END
 
-    printf $spec "%-16s%s\n", "BuildArch:", "noarch" if($noarch);
+    printf $spec "%-16s%s\n", "BuildArch:", "noarch" if ($noarch);
 
-    if(defined($requires{perl})) {
+    if (defined($requires{perl})) {
         $build_requires{perl} = $build_requires{perl} || $requires{perl};
         delete $requires{perl};
     }
 
-    if(defined($build_requires{perl})) {
+    if (defined($build_requires{perl})) {
         $build_requires{perl} =~ s/^[<>=]+ *//;
         printf $spec "%-16s%s >= %s\n", "BuildRequires:", "perl",
             (($build_requires{perl} lt "5.6.0" ? "0:" : "1:") . $build_requires{perl})
@@ -1299,38 +1328,52 @@ END
     }
 
     for my $dep (keys(%requires)) {
-        $build_requires{$dep} = $build_requires{$dep} || $requires{$dep};
+        $build_requires{$dep} = ($build_requires{$dep} || $requires{$dep});
     }
 
     for my $dep (sort(keys(%build_requires))) {
         next if exists $dep_blacklist{$dep};
 
-        $build_requires{$dep} = max($build_requires{$dep}, ($min_versions{$dep} || 0));
+        if ($dep =~ /^(?:lib|strict|warnings)$/) {
+            $dep_blacklist{$dep} = undef;
+            next;
+        }
 
-        if(exists($corelist{$dep})
+        # Who would have thought spamming versions in to deps would make them worthless?
+        $build_requires{$dep} = 0 if ($dep eq 'Module::Build');
+
+        verbose(  "for $module $dep comparing "
+                . $build_requires{$dep} . ", "
+                . ($min_versions{$dep} || 0)
+                . "\n");
+        $build_requires{$dep} = "" . ($build_requires{$dep} || 0);
+        $build_requires{$dep} = "" . max($build_requires{$dep}, ($min_versions{$dep} || 0))
+            if (exists($min_versions{$dep}));
+
+        if (exists($corelist{$dep})
             && $corelist{$dep} ge $build_requires{$dep})
         {
-            next if(!$compat);
+            next if (!$compat);
         }
-        elsif($follow) {
-            if($dep ne $module) {
-                if(grep {$_ eq $dep} @processed) {
+        elsif ($follow) {
+            if ($dep ne $module) {
+                if (grep { $_ eq $dep } @processed) {
 
                     # move the dep after this one as the order gets reversed to build
                     verbose("$dep for $module already processed");
                     $build_order{$dep} = $count + 1;
                 }
-                elsif(grep {$_ eq $dep} @args) {
+                elsif (grep { $_ eq $dep } @args) {
 
                     # move the module after this one as the order gets reversed to build
                     verbose("$dep for $module already added to args");
                     $build_order{$module} = $count + 1;
                 }
-                elsif(check_dep($dep, $build_requires{$dep})) {
+                elsif (check_dep($dep, $build_requires{$dep})) {
                     verbose("$dep >= $build_requires{$dep} is available, skipping.");
                 }
                 else {
-                    print(
+                    verbose(
                         "$dep >= $build_requires{$dep} is not available for $module, adding it to the list.\n"
                     );
                     push(@args, $dep);
@@ -1338,8 +1381,8 @@ END
             }
         }
         printf $spec "%-16s%s", "BuildRequires:", "perl($dep)";
-        print $spec (" >= " . max($build_requires{$dep}, ($min_versions{$dep} || 0)))
-            if($build_requires{$dep});
+        print $spec " >= " . $build_requires{$dep}
+            if ($build_requires{$dep});
         print $spec "\n";
     }
 
@@ -1348,10 +1391,10 @@ END
     }
 
     for my $dep (sort(keys(%requires))) {
-        next if(!$compat and exists($corelist{$dep}));
+        next if (!$compat and exists($corelist{$dep}));
         printf $spec "%-16s%s", "Requires:", "perl($dep)";
-        print $spec (" >= " . max($requires{$dep}, ($min_versions{$dep} || 0)))
-            if($requires{$dep});
+        print $spec " >= " . $requires{$dep}
+            if ($requires{$dep});
         print $spec "\n";
     }
 
@@ -1361,7 +1404,7 @@ END
         printf $spec "%-16s%s\n", "Requires:", $dep;
     }
 
-    if(!$compat) {
+    if (!$compat) {
         print $spec <<END;
 Requires:       perl(:MODULE_COMPAT_\%(eval "`\%{__perl} -V:version`"; echo \$version))
 END
@@ -1371,7 +1414,7 @@ END
         printf $spec "%-16s%s\n", "Provides:", $prov;
     }
 
-    if(@filter_requires) {
+    if (@filter_requires) {
         print $spec <<END
 
 Source98:       $name-filter-requires.sh
@@ -1380,7 +1423,7 @@ Source98:       $name-filter-requires.sh
 END
     }
 
-    if(@filter_provides) {
+    if (@filter_provides) {
         print $spec <<END
 
 Source99:       $name-filter-provides.sh
@@ -1400,7 +1443,7 @@ $description
 \%setup -q@{[($noprefix ? "" : " -n $buildpath")]}
 END
 
-    if(@filter_requires) {
+    if (@filter_requires) {
         print $spec <<'END';
 
 sed -e 's,@@PERL_REQ@@,%{real_perl_requires},' %{SOURCE98} > %{__perl_requires}
@@ -1408,7 +1451,7 @@ chmod +x %{__perl_requires}
 END
     }
 
-    if(@filter_provides) {
+    if (@filter_provides) {
         print $spec <<'END';
 
 sed -e 's,@@PERL_PROV@@,%{real_perl_provides},' %{SOURCE99} > %{__perl_provides}
@@ -1416,7 +1459,7 @@ chmod +x %{__perl_provides}
 END
     }
 
-    if(grep {$_ eq "pm_to_blib"} @files) {
+    if (grep { $_ eq "pm_to_blib" } @files) {
         print $spec <<'END';
 
 rm -f pm_to_blib
@@ -1428,7 +1471,7 @@ END
 \%build
 END
 
-    if($uses_autoinstall) {
+    if ($uses_autoinstall) {
         print $spec <<END
 export PERL_AUTOINSTALL="--skipdeps"
 END
@@ -1441,14 +1484,15 @@ END
     # For packages that override core packages
     $paths
         = "INSTALLSITEMAN3DIR=/usr/local/share/man/man3 INSTALLSITEMAN1DIR=/usr/local/share/man/man1"
-        if($iscore);
+        if ($iscore);
 
-    if($usebuildpl) {
-        $paths = lc($paths);
+    if ($usebuildpl) {
+        $paths = "";    ##lc($paths);
 
         print $spec <<END;
 \%{__perl} Build.PL installdirs=$instdir@{[$noarch ? '' : qq{ optimize="$macro{optimize}"} ]} $paths
 \%{__perl} -p -i -e 's/^Module::Build->VERSION/#Module::Build->VERSION/g' Build
+
 ./Build
 END
     }
@@ -1459,7 +1503,7 @@ END
 END
 
         print $spec "\%{__perl} -pi -e 's/^\\tLD_RUN_PATH=[^\\s]+\\s*/\\t/' Makefile\n"
-            if($compat and !$noarch);
+            if ($compat and !$noarch);
 
         print $spec <<END;
 make \%{?_smp_mflags}
@@ -1473,7 +1517,7 @@ rm -rf $macro{buildroot}
 
 END
 
-    if($usebuildpl) {
+    if ($usebuildpl) {
         print $spec "./Build install destdir=$macro{buildroot} create_packlist=0\n";
     }
     else {
@@ -1484,7 +1528,7 @@ find $macro{buildroot} -type f -name .packlist -exec rm -f {} \\;
 END
     }
 
-    if(!$noarch) {
+    if (!$noarch) {
         print $spec <<END;
 find $macro{buildroot} -type f -name '*.bs' -size 0 -exec rm -f {} \\;
 END
@@ -1497,7 +1541,7 @@ find $macro{buildroot} -depth -type d -exec rmdir {} 2>/dev/null \\;
 
 END
 
-    if($addlicense and !grep /copying|artistic|copyright|license/i, @doc) {
+    if ($addlicense and !grep /copying|artistic|copyright|license/i, @doc) {
         print $spec <<END;
 perldoc -t perlgpl > COPYING
 perldoc -t perlartistic > Artistic
@@ -1512,12 +1556,20 @@ find $macro{buildroot} -type f -print | sed "s\@^$macro{buildroot}\@\@g" > filel
 
 END
 
+## BUGBUG WTH is the regex necessary for Test::ConsistentVersion?
+    if ($module =~ /^(?:Test::ConsistentVersion|Lingua::Stem::Snowball|Module::ExtractUse)$/) {
+        print $spec <<'END';
+%{__perl} -p -i -e 's/\.3pm$/\.3pm.gz/g' filelist
+
+END
+    }
+
     print $spec <<END;
 \%check@{[($compat ? ' || :' : '')]}
 END
 
     # some modules check their manifest and can pickup debuginfo files and such
-    if(!$noarch) {
+    if (!$noarch) {
         print $spec <<'END';
 cat << \EOF >> MANIFEST.SKIP
 \bdebug.*.list$
@@ -1528,7 +1580,7 @@ END
 
     }
 
-    if($usebuildpl) {
+    if ($usebuildpl) {
         print $spec "./Build test\n";
     }
     else {
@@ -1560,41 +1612,60 @@ END
 
     $spec->close();
 
-    build_rpm($specfile) if($buildsrpm or($buildrpm && !$follow));
+    build_rpm($specfile) if ($buildsrpm or ($buildrpm && !$follow));
 
     push(@processed, $module);
     $build_order{$module} = $count;
 }
 
-if($buildrpm && $follow) {
+if ($buildrpm && $follow) {
     foreach my $mod (
-        sort {$build_order{$b} <=> $build_order{$a}}
+        sort { $build_order{$b} <=> $build_order{$a} }
         keys(%build_order)
         )
     {
         $mod =~ s/::/-/g;
         my $spec = "perl-$mod.spec";
         my $dnf  = which("dnf");
-        if($dnf) {
-            system("sudo dnf -q -y builddep $spec");
+        if ($dnf) {
+            run_cmd("sudo dnf -q -y builddep $spec");
         }
         else {
-            system("sudo yum-builddep -t -y $spec");
+            run_cmd("sudo yum-builddep -t -y $spec");
         }
         build_rpm($spec);
-        my $dirs = './noarch/';
-        $dirs .= ' ./x86_64/' if(-d './x86_64/');
-        if($dnf) {
-            system(qq{find $dirs -type f | xargs --no-run-if-empty sudo dnf -y install});
+        my $dirs = "$spec-build/RPMS/";
+        if ($dnf) {
+            run_cmd(qq{find $dirs -type f | xargs --no-run-if-empty sudo dnf -y install});
         }
         else {
-            system(qq{find $dirs -type f | xargs --no-run-if-empty sudo yum -y install});
+            run_cmd(qq{find $dirs -type f | xargs --no-run-if-empty sudo yum -y install});
         }
     }
 }
 
 sub max {
-    my($x, $y) = @_;
-    return(($x, $y)[$x < $y]);
+    my ($x, $y) = @_;
+    verbose("max 1: $x < $y\n");
+
+    # chop off epoch for this test
+    $x =~ s/^[^:]*://g;
+    $y =~ s/^[^:]*://g;
+    verbose("max 2: $x < $y?\n");
+
+    my $x1 = Perl::Version->new("$x");
+    my $y1 = Perl::Version->new("$y");
+
+    return (($x, $y)[ $x1 < $y1 ]);
 }
 
+sub run_cmd {
+    my $cmd = shift;
+
+    verbose("Running: $cmd");
+    my $res = system($cmd);
+    if ($res != 0) {
+        croak("cmd failed: $!, $@");
+    }
+    return;
+}

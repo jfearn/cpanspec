@@ -1,11 +1,32 @@
 FROM centos:6
 
-# Make a directory to work in
-RUN mkdir /cpanspec
+MAINTAINER "Jeff Fearn" <jfearn@redhat.com>
+
+RUN useradd -ms /bin/bash cpanspec
+RUN echo 'cpanspec ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 # Install EPEL
 RUN yum install epel-release -y
 
 # Install cpanspec deps
-RUN yum -y install tar rpm yum-utils gcc deltarpm rpm-build sudo 'perl(Archive::Tar)' 'perl(Archive::Zip)' 'perl(IO::Uncompress::Bunzip2)' 'perl(LWP::UserAgent)' 'perl(Module::Build)' 'perl(Module::CoreList)' 'perl(Module::ExtractUse)' 'perl(Parse::CPAN::Packages)' 'perl(Pod::Simple::TextContent)' 'perl(Text::Autoformat)' 'perl(YAML)'
+RUN yum -y install \
+  'perl(Archive::Tar)' \
+  'perl(Archive::Zip)' \
+  'perl(IO::Uncompress::Bunzip2)' \
+  'perl(LWP::UserAgent)' \
+  'perl(Module::Build)' \
+  'perl(Module::CoreList)' \
+  'perl(Module::ExtractUse)' \
+  'perl(Parse::CPAN::Packages)' \
+  'perl(Perl::Version)' \
+  'perl(Pod::Simple::TextContent)' \
+  'perl(Text::Autoformat)' \
+  'perl(YAML)' \
+  deltarpm \
+  gcc \
+  rpm \
+  rpm-build \
+  sudo \
+  tar \
+  yum-utils
 

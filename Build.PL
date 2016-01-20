@@ -74,7 +74,7 @@ my $builder = $class->new(
         'Text::Autoformat'         => 0,
         'YAML'                     => 0,
     },
-    script_files      => ['cpanspec',],
+    script_files      => ['cpanspec', 'cs-docker',],
     install_path      => {'Dockerfiles' => '/usr/share/cpanspec/Dockerfiles',},
     Dockerfiles_files => {
         'Dockerfiles/centos6'  => 'Dockerfiles/centos6',

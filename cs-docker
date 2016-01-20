@@ -24,7 +24,7 @@ cs-docker <options>
 
 =head1 DESCRIPTION
 
-Convinience wrapper for using cpanspec in Docker!
+Convenience wrapper for using cpanspec in Docker!
 
 =cut
 
@@ -43,18 +43,18 @@ my $file       = undef;
 my $image      = undef;
 my $create_dir = undef;
 my $work_dir   = $ENV{"HOME"} . '/cpanspec';
-my $docker_dir   = '/usr/share/cpanspec/Dockerfiles';
+my $docker_dir = '/usr/share/cpanspec/Dockerfiles';
 my $build      = undef;
 
 GetOptions(
-    'help|h'     => \$help,
-    'man'        => \$man,
-    'create_dir' => \$create_dir,
-    'build' => \$build,
-    'module=s'   => \$module,
-    'file=s'     => \$file,
-    'image=s'    => \$image,
-    'work_dir=s' => \$work_dir,
+    'help|h'       => \$help,
+    'man'          => \$man,
+    'create_dir'   => \$create_dir,
+    'build'        => \$build,
+    'module=s'     => \$module,
+    'file=s'       => \$file,
+    'image=s'      => \$image,
+    'work_dir=s'   => \$work_dir,
     'docker_dir=s' => \$docker_dir,
 ) || pod2usage(-verbose => 0);
 
@@ -79,14 +79,14 @@ sub build {
 
 sub run {
 
-    my $name = $module;
-    my $target = $module;
+    my $name      = $module;
+    my $target    = $module;
     my $file_name = undef;
 
-    if($file) {
+    if ($file) {
         $file_name = fileparse($file);
-        $name = $file_name;
-        $target = "/home/cpanspec/work_dir/$file_name";
+        $name      = $file_name;
+        $target    = "/home/cpanspec/work_dir/$file_name";
     }
 
     if ($name =~ /::/) {
@@ -101,24 +101,26 @@ sub run {
         }
     }
 
-    croak("Working dir does not exist!") unless (-d "$work_dir");
+    croak(qq{Working dir "$work_dir" does not exist!}) unless (-d "$work_dir");
 
     $work_dir = "$work_dir/$image/$name";
     make_path("$work_dir") unless (-d "$work_dir");
 
     croak("The working directory '$work_dir' does not exist!") unless (-d "$work_dir");
 
-    if(-f "cpanspec") {
+    if (-f "cpanspec") {
         system(qq{cp -f cpanspec $work_dir/.});
-    } else {
+    }
+    else {
         system(qq{cp -f /usr/bin/cpanspec $work_dir/.});
     }
 
-    if($file) {
+    if ($file) {
         system(qq{cp -f $file $work_dir/.});
     }
 
-    my $cmd = qq{docker run --user=cpanspec --rm -i -t -v $work_dir:/home/cpanspec/work_dir --workdir /home/cpanspec/work_dir cpanspec-$image  /home/cpanspec/work_dir/cpanspec --verbose --force --build --follow --packager '$ENV{"USER"}' $target};
+    my $cmd
+        = qq{docker run --user=cpanspec --rm -i -t -v $work_dir:/home/cpanspec/work_dir --workdir /home/cpanspec/work_dir cpanspec-$image  /home/cpanspec/work_dir/cpanspec --verbose --force --build --follow --packager '$ENV{"USER"}' $target};
     print("running: $cmd\n");
     system($cmd);
 

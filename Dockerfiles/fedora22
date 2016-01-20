@@ -1,8 +1,30 @@
 FROM fedora:22
 
-# Make a directory to work in
-RUN mkdir /cpanspec
+
+MAINTAINER "Jeff Fearn" <jfearn@redhat.com>
+
+RUN useradd -ms /bin/bash cpanspec
+RUN echo 'cpanspec ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 # Install cpanspec deps
-RUN dnf -y install tar python-dnf-plugins-core gcc deltarpm rpm-build sudo 'perl(Archive::Tar)' 'perl(Archive::Zip)' 'perl(IO::Uncompress::Bunzip2)' 'perl(LWP::UserAgent)' 'perl(Module::Build)' 'perl(Module::CoreList)' 'perl(Module::ExtractUse)' 'perl(Parse::CPAN::Packages)' 'perl(Pod::Simple::TextContent)' 'perl(Text::Autoformat)' 'perl(YAML)'
+RUN dnf -y install \
+  'perl(Archive::Tar)' \
+  'perl(Archive::Zip)' \
+  'perl(IO::Uncompress::Bunzip2)' \
+  'perl(LWP::UserAgent)' \
+  'perl(Module::Build)' \
+  'perl(Module::CoreList)' \
+  'perl(Module::ExtractUse)' \
+  'perl(Parse::CPAN::Packages)' \
+  'perl(Perl::Version)' \
+  'perl(Pod::Simple::TextContent)' \
+  'perl(Text::Autoformat)' \
+  'perl(YAML)' \
+  deltarpm \
+  gcc \
+  python-dnf-plugins-core \
+  rpm \
+  rpm-build \
+  sudo \
+  tar
 

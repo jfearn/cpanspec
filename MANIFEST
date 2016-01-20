@@ -4,6 +4,7 @@ Build.PL
 Changes
 COPYING
 cpanspec
+cs-docker
 Dockerfiles/centos6
 Dockerfiles/fedora22
 MANIFEST			This list of files

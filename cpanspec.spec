@@ -27,6 +27,16 @@ Requires:       gcc
 cpanspec will generate a spec file to build a rpm from a CPAN-style Perl
 module distribution.
 
+%package docker
+Group:          Development/Libraries
+Summary:        Docker intergration for cpanspec
+Requires:       docker
+Requires:       cpanspec = %{version}-%{release}
+
+%description docker
+Docker intergration for cpanspec.
+
+
 %prep
 %setup -q -n cpanspec-%{version}
 
@@ -50,10 +60,18 @@ rm -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root,-)
-%doc Artistic BUGS Changes COPYING cpanspec TODO
-%{_bindir}/*
-%{_mandir}/man1/*
+%doc Artistic BUGS Changes COPYING TODO
+%{_bindir}/cpan*
+%{_mandir}/man1/cpan*
 %{_datadir}/%{name}
+%exclude %{_datadir}/%{name}/Dockerfiles
+
+%files docker
+%defattr(-,root,root,-)
+%doc Artistic COPYING
+%{_mandir}/man1/cs-docker*
+%{_bindir}/cs-docker
+%{_datadir}/%{name}/Dockerfiles
 
 %changelog
 * Mon Aug 04 2014 Jeff fearn <jfearn@redhat.com> 2.0_1-0.t1
