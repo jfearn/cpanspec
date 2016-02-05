@@ -6,7 +6,7 @@ Try to get cpan_home from CPAN::MyConfig or CPAN::Config instead of
 Add an option to honor %_sourcedir and such.
 
 Handle Devel::CheckLib
-	e.g. Math-Prime-Util-GMP uses gmp so Requiesgmp and BuildRequiresgmp-devel.
+	e.g. Math-Prime-Util-GMP uses gmp so Requies gmp and BuildRequires gmp-devel.
 
 Some moduels aren't getting their test deps pulled in properly.
  Path::Abstract
@@ -21,11 +21,14 @@ Add option to use local spec file
 
 Need to generate a full list for dep build order, including those that can be built at the same time
 
+cpanspec
+ *  make an option to spit out the cpanspec dependencies
+
 cs-docker
-  * Allow support for supplying multiple modules to cs-docker
-  * Make sure when cpanspec gets multiple packages on the cli it always build them in the order supplied
-  * catch <CTRL>-C
-  * might need to clean out work_dir to avoid artifacts polluting output
+ * catch <CTRL>-C
+  * http://www.weave.works/my-container-wont-stop-on-ctrl-c-and-other-minor-tragedies/
+ * Make sure any deps built in the Dokerfile get put in the right place
+ * replace --file and --module with ARGV parsing so order can be maintained when file and module are mixed
 
 dist-import
   * include ??

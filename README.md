@@ -28,7 +28,7 @@ cs-docker --create_dir --image fedora22 --module Test::ConsistentVersion
 docker run --user=cpanspec --rm -i -t -v /home/jfearn/cpanspec/fedora22:/home/cpanspec/work_dir cpanspec-fedora22 /usr/bin/bash
 }}}
 
-## Some useful Dpcker comamnds ##
+## Some useful Docker comamnds ##
 
 {{{
 docker images 
@@ -37,7 +37,9 @@ docker rmi $IDs
 
 ## Termiante a runaway container ##
 {{{
-ps aux | grep 'docker run' | grep -v grep | sed -e 's/[^ ]* *\([^ ]*\).*$/\1/g' | xargs --no-run-if-empty kill
+docker ps -q | xargs docker stop
+docker ps -qa | xargs docker rm
+docker images -q | xargs docker rmi
 }}}
 
 

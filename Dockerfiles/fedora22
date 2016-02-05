@@ -28,3 +28,10 @@ RUN dnf -y install \
   sudo \
   tar
 
+RUN yum -y upgrade --skip-broken --exclude=util-linux --exclude=*.i686;
+
+USER cpanspec
+ENV HOME /home/cpanspec
+WORKDIR /tmp/deps
+RUN rpmdev-setuptree
+
