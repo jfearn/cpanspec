@@ -1,0 +1,40 @@
+FROM centos:7
+
+MAINTAINER "Jeff Fearn" <jfearn@redhat.com>
+
+RUN useradd -ms /bin/bash cpanspec
+RUN echo 'cpanspec ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+# Install EPEL
+RUN yum install epel-release -y
+
+# Install cpanspec deps
+RUN yum -y install \
+  'perl(Archive::Tar)' \
+  'perl(Archive::Zip)' \
+  'perl(IO::Uncompress::Bunzip2)' \
+  'perl(LWP::UserAgent)' \
+  'perl(Module::Build)' \
+  'perl(Module::CoreList)' \
+  'perl(Module::ExtractUse)' \
+  'perl(Parse::CPAN::Packages)' \
+  'perl(Perl::Version)' \
+  'perl(Pod::Simple::TextContent)' \
+  'perl(Text::Autoformat)' \
+  'perl(YAML)' \
+  deltarpm \
+  gcc \
+  rpm \
+  rpm-build \
+  sudo \
+  tar \
+  yum-utils
+
+
+RUN yum -y upgrade --skip-broken --exclude=util-linux --exclude=*.i686;
+
+USER cpanspec
+ENV HOME /home/cpanspec
+WORKDIR /tmp/deps
+RUN rpmdev-setuptree
+
