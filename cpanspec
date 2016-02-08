@@ -260,7 +260,7 @@ my $force        = 0;
 my $stdout       = 0;
 my $packager;
 my $release = 1;
-## BUGBUG hmm if a package fails because the current RPM isn't new enough then we have to check the epoch
+## FIXME hmm if a package fails because the current RPM isn't new enough then we have to check the epoch
 ### Also if packages use variable length versions we need to set epochs ... e.g. 5.123 < 5.13 in cpan but > in rpm
 my $epoch         = 4;
 my $disttag       = '%{?dist}';
@@ -315,7 +315,7 @@ my %dep_blacklist = (
     'Win32::Console'     => 1,
     'DBD::Oracle'        => 1,
 ##    'Test::Perl::Critic' => 1,    # Too many dependencies
-    'ok'                     => 1,    # Side effect of Test::use::ok
+##    'ok'                     => 1,    # Side effect of Test::use::ok ... "ok - Alternative to Test::More::use_ok"
     'BaseClass'              => 1,    # Common test class shipped by ourselves
     'TestServer'             => 1,    # Likewise
     'of'                     => 1,    # o_O
@@ -472,7 +472,7 @@ sub process_module {
 
     croak("you can't update perl using cpanspec!") if ($module eq 'perl');
 
-    ## BUGBUG this really needs to check everything in the module ...
+    ## FIXME this really needs to check everything in the module ...
     my $iscore = exists($corelist{$module}) || defined($corelist{$name});
     verbose(
         "$module or $name is supplied by core perl, moving package content to vendor paths to avoid conflicts."
@@ -711,14 +711,16 @@ sub process_module {
             $my_builder = $1;
         }
     }
+##verbose($makecontent);
 
-    # BUGBUG only works for most simple case
-    if ($makecontent =~ /'?LIBS'?\s*=>\s*\[(.*)\]/sm) {
+    # FIXME only works for most simple case
+    if ($makecontent =~ /'?LIBS'?\s*=>\s*\[(.*)\]/sm ) {
 ##        verbose($makecontent);
         foreach my $lib (split(/\s+/, $1)) {
             verbose("Found lib $lib ...");
-            $lib =~ s/-l//;
+            $lib =~ s/-l//i;
             $lib =~ s/['"]//g;
+            $lib =~ s/[;,]$//;
             next if ($lib eq 'm');
 
             if (!$lib || $lib !~ /\S/) {
@@ -727,7 +729,7 @@ sub process_module {
                 next;
             }
 
-            # BUGBUG blows up on variables :(
+            # FIXME blows up on variables :(
             if ($lib =~ /\$([\w-]*)/) {
                 my $test = $1;
                 verbose("lib: $lib");
@@ -775,20 +777,29 @@ sub process_module {
         }
     }
 
-    # BUGBUG only works for most simple case
+# FIXME odd lib declartion
+if(0 && $module eq 'XML::GDOME') {
+            push(@add_requires,      "gdome");
+            push(@add_buildrequires, "gdome-devel");
+            push(@add_requires,      "libxml2");
+            push(@add_buildrequires, "libxml2-devel");
+
+}
+
+    # FIXME only works for most simple case
     if ($makecontent =~ /ExtUtils::PkgConfig->find\(['"](.*)['"]\)/) {
         my $dep = $1;
         my $cmd
-            = q{repoquery --cache -s --whatprovides }
+            = q{repoquery --quiet  -s --whatprovides }
             . $dep
-            . q{.\* | head -n1 | perl -p -e 's/-[^-]*.src.rpm//g' | xargs repoquery --qf "%{NAME}"};
+            . q{.\* | head -n1 | perl -p -e 's/-[^-]*.src.rpm//g' | xargs repoquery --quiet --qf "%{NAME}"};
 
         $cmd
-            = q{dnf --cacheonly -q repoquery -s --whatprovides }
+            = q{dnf  --quiet repoquery -s --whatprovides }
             . $dep
-            . q{.\* | head -n1 | perl -p -e 's/-[^-]*.src.rpm//g' | xargs dnf -q repoquery --qf "%{NAME}"}
+            . q{.\* | head -n1 | perl -p -e 's/-[^-]*.src.rpm//g' | xargs dnf --quiet repoquery --qf "%{NAME}"}
             if (which("dnf"));
-
+        verbose("Running $cmd");
         my $lib = qx/$cmd/;
         chomp($lib);
 
@@ -895,7 +906,7 @@ sub process_module {
     }
     $license = "CHECK(GPL+ or Artistic)" if (!$license);
 
-    # BUGBUG some modules have deps missing from META so juct check anyway
+    # FIXME some modules have deps missing from META so juct check anyway
     my $p = Module::ExtractUse->new;
     foreach my $file (grep /\.(?:PL|pm)$/, @files) {
         my $code = extract($archive, $type, "$path/$file");
@@ -948,7 +959,7 @@ sub process_module {
 
     my $usebuildpl = 0;
 
-    # BUGBUG <sigh> other build modules use Build.PL :(
+    # FIXME <sigh> other build modules use Build.PL :(
     if (grep /^Build\.PL$/, @files) {
         $build_requires{$my_builder} ||= 0;
         $usebuildpl = 1;
@@ -1116,8 +1127,8 @@ END
         print $spec "\n";
     }
 
-    ## BUGBUG modules that don't require deps properly :-/
-    push(@add_buildrequires, 'subversion') if($name eq 'SVN::Look');
+    ## FIXME modules that don't require deps properly :-/
+    push(@add_buildrequires, 'subversion') if($module eq 'SVN::Look');
 
     for my $dep (@add_buildrequires) {
         printf $spec "%-16s%s\n", "BuildRequires:", $dep;
@@ -1292,7 +1303,7 @@ find $macro{buildroot} -type f -print | sed "s\@^$macro{buildroot}\@\@g" > filel
 
 END
 
-## BUGBUG WTH is the regex necessary for?
+## FIXME WTH is the regex necessary for?
     if (0
         && $module
         =~ /^(?:Test::ConsistentVersion|Lingua::Stem::Snowball|Module::ExtractUse|Test::Differences|MooseX::Types)$/
@@ -1326,7 +1337,7 @@ END
     else {
         print $spec "make test\n"
             unless ($specfile eq 'perl-Crypt-OpenSSL-VerifyX509.spec')
-            ;    # BUGBUG MD5 cert support dropped from Fedora
+            ;    # FIXME MD5 cert support dropped from Fedora
     }
 
     print $spec <<END;
@@ -1418,16 +1429,16 @@ sub init {
         my $rpm;
 
         my $repoquery = which("dnf");
-        my $opts      = qq{ --cacheonly -q repoquery --provides perl|};
+        my $opts      = qq{  -q repoquery --provides perl|};
 
         if ($repoquery) {
-           system('yum clean all --enablerepo=*');
-           system('yum makecache --enablerepo=*');
+           system('sudo yum clean all --enablerepo=*');
+           system('sudo yum makecache --enablerepo=*');
         } else {
-           system('dnf clean all --enablerepo=*');
-           system('dnf makecache --enablerepo=*');
+           system('sudo dnf clean all --enablerepo=*');
+           system('sudo dnf makecache --enablerepo=*');
             $repoquery = which("repoquery");
-            $opts      = qq{--cache --provides perl|};
+            $opts      = qq{ --provides perl|};
         }
 
         my $cmd = qq{$repoquery $opts};
@@ -1481,9 +1492,9 @@ sub print_version {
 
 sub verbose {
 
-    #    print STDERR @_, "\n" if ($verbose);
-    print STDOUT @_, "\n" if ($verbose);
-#    carp(@_) if ($verbose);
+##    print STDERR @_, "\n" if ($verbose);
+##    print STDOUT @_, "\n" if ($verbose);
+    carp(@_) if ($verbose);
 }
 
 sub fetch {
@@ -1757,13 +1768,13 @@ sub check_repo {
         if (defined($repo_cache{"$dep-$version"}));
 
     my $repoquery = which("dnf");
-    my $opts      = qq{--cacheonly -q repoquery --qf='%{NAME}' --recent --whatprovides "$dep"};
-    my $opts2     = qq{--cacheonly -q repoquery --provides};
+    my $opts      = qq{ --quiet repoquery --qf='%{NAME}' --recent --whatprovides "$dep"};
+    my $opts2     = qq{ --quiet repoquery --provides};
 
     unless ($repoquery) {
         $repoquery = which("repoquery");
-        $opts      = qq{ --cache --qf='%{NAME}' --whatprovides "$dep" | sort | tail -n1};
-        $opts2     = qq{ --cache -q  --provides};
+        $opts      = qq{ --quiet  --qf='%{NAME}' --whatprovides "$dep" | sort | tail -n1};
+        $opts2     = qq{  --quiet  --provides};
     }
 
     my $cmd = qq{$repoquery $opts};
@@ -1843,7 +1854,7 @@ sub which {
 
 sub check_src_rpm {
     my $pkg = shift;
-    my $cmd = qq{repoquery --cache --qf='%{NAME} %{VERSION}' --whatprovides '$pkg' --enablerepo=*};
+    my $cmd = qq{repoquery --quiet  --qf='%{NAME} %{VERSION}' --whatprovides '$pkg' --enablerepo=*};
     verbose("check_src_rpm running:  $cmd");
     my $result = qx/$cmd/;
     chomp($result);
@@ -1858,7 +1869,7 @@ sub download_srpm {
     $dir =~ s/perl\((.*)\)/perl-$1/;
     $dir =~ s/::/-/g;
     $dir =~ s/[ >=<]//g;
-    run_cmd("yumdownloader -q --nogpgcheck --source --enablerepo=* --destdir='$dir' '$pkg'");
+    run_cmd("yumdownloader --quiet --nogpgcheck --source --enablerepo=* --destdir='$dir' '$pkg'");
     my @files = glob("$dir/*.src.rpm");
     return ($files[0]);
 }
@@ -1873,7 +1884,7 @@ sub build_n_install {
     my $pkg  = shift;
     my $dirs = shift;
 
-## BUGBUG there is no version handling here
+## FIXME there is no version handling here
     my $package = $pkg;
     $package =~ s/perl\((.*)\).*/$1/;
     $package =~ s/::/-/g;
@@ -1911,10 +1922,10 @@ sub install_deps {
     verbose("Installing deps for $file");
 
     if ($dnf) {
-        @missing = qx/sudo dnf -q -y builddep "$file" | grep 'No Package found for'/;
+        @missing = qx/sudo dnf ---quiet -y builddep "$file" | grep 'No Package found for'/;
     }
     else {
-        @missing = qx/sudo yum-builddep -q -t -y "$file" | grep 'No Package found for'/;
+        @missing = qx/sudo yum-builddep --quiet -t -y "$file" | grep 'No Package found for'/;
     }
 
     foreach my $dep (@missing) {
@@ -1942,10 +1953,10 @@ sub install_pkg {
     my $paths = shift;
 
     if ($dnf) {
-        run_cmd(qq{find $paths -type f | xargs --no-run-if-empty sudo dnf --cacheonly -y install});
+        run_cmd(qq{find $paths -type f | xargs --no-run-if-empty sudo dnf  -y install});
     }
     else {
-        run_cmd(qq{find $paths -type f | xargs --no-run-if-empty sudo yum --cacheonly -y install});
+        run_cmd(qq{find $paths -type f | xargs --no-run-if-empty sudo yum  -y install});
     }
     return;
 }
@@ -1964,7 +1975,7 @@ sub get_provides {
         foreach my $pkg (qx{/usr/lib/rpm/perl.prov tmp.pm}) {
             chomp($pkg);
             $pkg =~ s/^perl\(//;
-            $pkg =~ s/\).*$//;    # BUGBUG grab version?
+            $pkg =~ s/\).*$//;    # FIXME grab version?
             if ($pkg !~ /^(?:$args{module}|Module::AutoInstall|Module::Install.*|Win32.*)$/) {
                 $provides{$pkg} = $pkg;
                 verbose("Adding $pkg as a provide of " . $args{module});
