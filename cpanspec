@@ -715,7 +715,7 @@ sub process_module {
 ##verbose($makecontent);
 
     # FIXME only works for most simple case
-    if ($makecontent =~ /'?LIBS'?\s*=>\s*\[(.*)\]/sm) {
+    if ($makecontent =~ /'?LIBS'?\s*=>\s*\[([^\]]*)\]/sm) {
 ##        verbose($makecontent);
         foreach my $lib (split(/\s+/, $1)) {
             verbose("Found lib $lib ...");
@@ -1083,6 +1083,13 @@ END
             $build_requires{$dep} = undef;
             next;
         }
+
+        # FIXME need to catch use in eval in tests as it's often recursive and almost always optional
+        if($module eq 'HTML::TreeBuilder::LibXML' && $dep eq 'Web::Scraper') {
+            $build_requires{$dep} = undef;
+            next;
+        }
+
 
         # Who would have thought spamming versions in to deps would make them worthless?
         $build_requires{$dep} = 0 if ($dep eq 'Module::Build');
