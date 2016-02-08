@@ -308,7 +308,7 @@ my @MACROS = (
 my %macro;
 
 my %dep_blacklist = (
-    'Win32'              => 1,    # We're not on win32
+    Win32                => 1,    # We're not on win32
     'Win32::Process'     => 1,    # We're not on win32
     'Win32::API'         => 1,    # We're not on win32
     'Win32::TieRegistry' => 1,    # We're not on win32
@@ -316,11 +316,12 @@ my %dep_blacklist = (
     'DBD::Oracle'        => 1,
 ##    'Test::Perl::Critic' => 1,    # Too many dependencies
 ##    'ok'                     => 1,    # Side effect of Test::use::ok ... "ok - Alternative to Test::More::use_ok"
-    'BaseClass'              => 1,    # Common test class shipped by ourselves
-    'TestServer'             => 1,    # Likewise
+    BaseClass                => 1,    # Common test class shipped by ourselves
+    TestServer               => 1,    # Likewise
     'of'                     => 1,    # o_O
     'Test::DependentModules' => 1,
-    'Blarg'                  => 1,
+    Blarg                    => 1,
+    MyApp                    => 1,
 );
 
 # deal with modules with incompatible versioning histories.
@@ -1435,12 +1436,12 @@ sub init {
         my $opts      = qq{  -q repoquery --provides perl|};
 
         if ($repoquery) {
-            system('sudo yum clean all --enablerepo=*');
-            system('sudo yum makecache --enablerepo=*');
-        }
-        else {
             system('sudo dnf clean all --enablerepo=*');
             system('sudo dnf makecache --enablerepo=*');
+        }
+        else {
+            system('sudo yum clean all --enablerepo=*');
+            system('sudo yum makecache --enablerepo=*');
             $repoquery = which("repoquery");
             $opts      = qq{ --provides perl|};
         }
