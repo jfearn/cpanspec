@@ -743,7 +743,7 @@ sub process_module {
                         verbose("Can't work out what provides: $cmd");
                         next;
                     }
-                    chomp($test);
+                    really_chomp($test);
                     $lib = $test;
                     if ($test =~ /^(.*)-devel/) {
                         $lib = $1;
@@ -802,7 +802,7 @@ sub process_module {
             if (which("dnf"));
         verbose("Running $cmd");
         my $lib = qx/$cmd/;
-        chomp($lib);
+        really_chomp($lib);
 
         push(@add_requires,      "$lib");
         push(@add_buildrequires, "$lib-devel");
@@ -1084,12 +1084,11 @@ END
             next;
         }
 
-        # FIXME need to catch use in eval in tests as it's often recursive and almost always optional
-        if($module eq 'HTML::TreeBuilder::LibXML' && $dep eq 'Web::Scraper') {
+     # FIXME need to catch use in eval in tests as it's often recursive and almost always optional
+        if ($module eq 'HTML::TreeBuilder::LibXML' && $dep eq 'Web::Scraper') {
             $build_requires{$dep} = undef;
             next;
         }
-
 
         # Who would have thought spamming versions in to deps would make them worthless?
         $build_requires{$dep} = 0 if ($dep eq 'Module::Build');
@@ -1423,7 +1422,7 @@ sub init {
     my $rpm = which("rpm");
     $packager = $packager || `$rpm --eval '\%packager'`;
 
-    chomp $packager;
+    really_chomp $packager;
 
     if (!$packager or $packager eq "\%packager") {
         croak(    "\%packager not defined in ~/.rpmmacros."
@@ -1458,7 +1457,7 @@ sub init {
             or warn "Failed to execute repoquery: $!\n";
 
         while (my $provides = <$rpm>) {
-            chomp $provides;
+            really_chomp $provides;
 
             if ($provides =~ /^perl\(([^\)]+)\)(?:\s+=\s+(\S+))?\s*$/) {
                 $corelist{$1} = defined($2) ? $2 : 0;
@@ -1744,7 +1743,7 @@ sub check_rpm {
     my $rpm = which("rpm");
 
     my $package = `$rpm -q --qf='%{NAME}' --whatprovides "$dep" | head -n1`;
-    chomp($package);
+    really_chomp($package);
 
     if ($? != 0) {
         verbose("backtick (rpm) failed with return value $?, $package");
@@ -1755,7 +1754,7 @@ sub check_rpm {
             = qq{rpm -q --provides "$package" | grep '$package = ' | sed -e 's/^.* =//g' -e 's/\-[^-]*\$//g'};
         verbose("running: $cmd");
         my $prov_ver = qx/$cmd/;
-        chomp($prov_ver);
+        really_chomp($prov_ver);
 
         # chop off epoch
         $prov_ver =~ s/^[^:]*://g if (defined($prov_ver));
@@ -1792,7 +1791,7 @@ sub check_repo {
     my $cmd = qq{$repoquery $opts};
     verbose(qq{Running '$cmd', this may take a while.});
     my $package = qx/$cmd/;
-    chomp($package);
+    really_chomp($package);
 
     if ($? != 0) {
         verbose("backtick (repoquery) failed with return value $? $@");
@@ -1833,7 +1832,7 @@ sub check_repo {
         verbose(qq{Running '$cmd', this may take a long while.});
 
         my $prov_ver = qx/$cmd/;
-        chomp($prov_ver);
+        really_chomp($prov_ver);
 
         # chop off epoch
         $prov_ver =~ s/^[^:]*://g if (defined($prov_ver));
@@ -1875,7 +1874,7 @@ sub check_src_rpm {
         = qq{repoquery --quiet  --qf='%{NAME} %{VERSION}' --whatprovides '$pkg' --enablerepo=*};
     verbose("check_src_rpm running:  $cmd");
     my $result = qx/$cmd/;
-    chomp($result);
+    really_chomp($result);
     verbose("result: $result");
     my ($rpm, $ver) = split(/ /, $result);
     return ($rpm);
@@ -1947,7 +1946,7 @@ sub install_deps {
     }
 
     foreach my $dep (@missing) {
-        chomp($dep);
+        really_chomp($dep);
         $dep =~ s/Error: No Package found for //;
         $dep =~ s/-devel//;
 
@@ -1996,7 +1995,7 @@ sub get_provides {
         }
         verbose(qx{/usr/lib/rpm/perl.prov tmp.pm});
         foreach my $pkg (qx{/usr/lib/rpm/perl.prov tmp.pm}) {
-            chomp($pkg);
+            really_chomp($pkg);
             $pkg =~ s/^perl\(//;
             $pkg =~ s/\).*$//;    # FIXME grab version?
             if ($pkg !~ /^(?:$args{module}|Module::AutoInstall|Module::Install.*|Win32.*)$/) {
@@ -2009,3 +2008,11 @@ sub get_provides {
     return (%provides);
 
 }
+
+sub really_chomp {
+    chomp($_[0]);
+    $_[0] =~ s/\R$//g;
+
+    return;
+}
+
