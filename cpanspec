@@ -320,7 +320,7 @@ my %dep_blacklist = (
     'TestServer'             => 1,    # Likewise
     'of'                     => 1,    # o_O
     'Test::DependentModules' => 1,
-    'Blarg' => 1,
+    'Blarg'                  => 1,
 );
 
 # deal with modules with incompatible versioning histories.
@@ -714,7 +714,7 @@ sub process_module {
 ##verbose($makecontent);
 
     # FIXME only works for most simple case
-    if ($makecontent =~ /'?LIBS'?\s*=>\s*\[(.*)\]/sm ) {
+    if ($makecontent =~ /'?LIBS'?\s*=>\s*\[(.*)\]/sm) {
 ##        verbose($makecontent);
         foreach my $lib (split(/\s+/, $1)) {
             verbose("Found lib $lib ...");
@@ -777,14 +777,14 @@ sub process_module {
         }
     }
 
-# FIXME odd lib declartion
-if(0 && $module eq 'XML::GDOME') {
-            push(@add_requires,      "gdome");
-            push(@add_buildrequires, "gdome-devel");
-            push(@add_requires,      "libxml2");
-            push(@add_buildrequires, "libxml2-devel");
+    # FIXME odd lib declartion
+    if (0 && $module eq 'XML::GDOME') {
+        push(@add_requires,      "gdome");
+        push(@add_buildrequires, "gdome-devel");
+        push(@add_requires,      "libxml2");
+        push(@add_buildrequires, "libxml2-devel");
 
-}
+    }
 
     # FIXME only works for most simple case
     if ($makecontent =~ /ExtUtils::PkgConfig->find\(['"](.*)['"]\)/) {
@@ -1069,7 +1069,10 @@ END
         if (   exists($dep_blacklist{$dep})
             || exists($my_provides{$dep})
             || $dep eq $module
-            || $dep =~ /^Win32::/ || $dep =~ /^[\d\.\_]*$/ || $dep =~ /^t::/ || $dep =~ /^inc::/)
+            || $dep =~ /^Win32::/
+            || $dep =~ /^[\d\.\_]*$/
+            || $dep =~ /^t::/
+            || $dep =~ /^inc::/)
         {
             delete($build_requires{$dep});
             next;
@@ -1128,7 +1131,7 @@ END
     }
 
     ## FIXME modules that don't require deps properly :-/
-    push(@add_buildrequires, 'subversion') if($module eq 'SVN::Look');
+    push(@add_buildrequires, 'subversion') if ($module eq 'SVN::Look');
 
     for my $dep (@add_buildrequires) {
         printf $spec "%-16s%s\n", "BuildRequires:", $dep;
@@ -1432,11 +1435,12 @@ sub init {
         my $opts      = qq{  -q repoquery --provides perl|};
 
         if ($repoquery) {
-           system('sudo yum clean all --enablerepo=*');
-           system('sudo yum makecache --enablerepo=*');
-        } else {
-           system('sudo dnf clean all --enablerepo=*');
-           system('sudo dnf makecache --enablerepo=*');
+            system('sudo yum clean all --enablerepo=*');
+            system('sudo yum makecache --enablerepo=*');
+        }
+        else {
+            system('sudo dnf clean all --enablerepo=*');
+            system('sudo dnf makecache --enablerepo=*');
             $repoquery = which("repoquery");
             $opts      = qq{ --provides perl|};
         }
@@ -1726,7 +1730,7 @@ sub get_description {
 }
 
 sub check_rpm {
-    my $dep     = shift;
+    my $dep = shift;
     my $version = shift || 0;
 
     my $rpm = which("rpm");
@@ -1791,7 +1795,12 @@ sub check_repo {
 
         # check if it's supplied by a source only repo
         if (my $pkg = check_src_rpm($dep)) {
-            if (exists($dep_blacklist{$pkg}) || $pkg =~ /^Win32::/ || $pkg =~ /^t::/ || $package =~ /^[\d\.\_]*$/ || $pkg =~ /^inc::/) {
+            if (   exists($dep_blacklist{$pkg})
+                || $pkg =~ /^Win32::/
+                || $pkg =~ /^t::/
+                || $package =~ /^[\d\.\_]*$/
+                || $pkg =~ /^inc::/)
+            {
                 verbose(qq{Skipping black listed dep $pkg});
                 return;
             }
@@ -1854,7 +1863,8 @@ sub which {
 
 sub check_src_rpm {
     my $pkg = shift;
-    my $cmd = qq{repoquery --quiet  --qf='%{NAME} %{VERSION}' --whatprovides '$pkg' --enablerepo=*};
+    my $cmd
+        = qq{repoquery --quiet  --qf='%{NAME} %{VERSION}' --whatprovides '$pkg' --enablerepo=*};
     verbose("check_src_rpm running:  $cmd");
     my $result = qx/$cmd/;
     chomp($result);
@@ -1970,11 +1980,12 @@ sub get_provides {
         next if ($file !~ m{\.pm$} || $file =~ m{^inc/});
         verbose("checking $file");
 
-if($type eq  'zip') {
-        $args{archive}->extractMember("$args{path}/$file", 'tmp.pm');
-} else {
-        $args{archive}->extract_file("$args{path}/$file", 'tmp.pm');
-}
+        if ($args{type} eq 'zip') {
+            $args{archive}->extractMember("$args{path}/$file", 'tmp.pm');
+        }
+        else {
+            $args{archive}->extract_file("$args{path}/$file", 'tmp.pm');
+        }
         verbose(qx{/usr/lib/rpm/perl.prov tmp.pm});
         foreach my $pkg (qx{/usr/lib/rpm/perl.prov tmp.pm}) {
             chomp($pkg);
