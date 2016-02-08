@@ -1970,7 +1970,11 @@ sub get_provides {
         next if ($file !~ m{\.pm$} || $file =~ m{^inc/});
         verbose("checking $file");
 
+if($type eq  'zip') {
+        $args{archive}->extractMember("$args{path}/$file", 'tmp.pm');
+} else {
         $args{archive}->extract_file("$args{path}/$file", 'tmp.pm');
+}
         verbose(qx{/usr/lib/rpm/perl.prov tmp.pm});
         foreach my $pkg (qx{/usr/lib/rpm/perl.prov tmp.pm}) {
             chomp($pkg);
