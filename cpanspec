@@ -314,8 +314,7 @@ my %dep_blacklist = (
     'Win32::TieRegistry' => 1,    # We're not on win32
     'Win32::Console'     => 1,
     'DBD::Oracle'        => 1,
-##    'Test::Perl::Critic' => 1,    # Too many dependencies
-##    'ok'                     => 1,    # Side effect of Test::use::ok ... "ok - Alternative to Test::More::use_ok"
+    'DBI::db'            => 1, # part of DBD::Oracle
     BaseClass                => 1,    # Common test class shipped by ourselves
     TestServer               => 1,    # Likewise
     'of'                     => 1,    # o_O
@@ -611,6 +610,13 @@ sub process_module {
     my $noarch = !grep /\.(c|h|xs|inl)$/i, @files;
     my $vendorlib = ($noarch ? "vendorlib" : "vendorarch");
     my $lib = "\%{perl_$vendorlib}";
+
+    # FIXME any modules that are black listed and detected as deps need to be added to the filter_requires
+    # after all deps are processed
+    if($module eq 'Data::ObjectDriver') {
+        push(@filter_requires, 'DBD::Oracle');
+        push(@filter_requires, 'DBI::db');
+    }
 
     if (@filter_requires) {
         my $script = "$name-filter-requires.sh";
@@ -1422,7 +1428,7 @@ sub init {
     my $rpm = which("rpm");
     $packager = $packager || `$rpm --eval '\%packager'`;
 
-    really_chomp $packager;
+    really_chomp($packager);
 
     if (!$packager or $packager eq "\%packager") {
         croak(    "\%packager not defined in ~/.rpmmacros."
@@ -1442,12 +1448,16 @@ sub init {
         my $opts      = qq{  -q repoquery --provides perl|};
 
         if ($repoquery) {
-            system('sudo dnf clean all --enablerepo=*');
-            system('sudo dnf makecache --enablerepo=*');
+          if ($buildrpm && $follow) {
+            run_cmd('sudo dnf clean all --enablerepo=*');
+            run_cmd('sudo dnf makecache --enablerepo=*');
+          }
         }
         else {
-            system('sudo yum clean all --enablerepo=*');
-            system('sudo yum makecache --enablerepo=*');
+          if ($buildrpm && $follow) {
+            run_cmd('sudo yum clean all --enablerepo=*');
+            run_cmd('sudo yum makecache --enablerepo=*');
+          }
             $repoquery = which("repoquery");
             $opts      = qq{ --provides perl|};
         }
@@ -1457,7 +1467,7 @@ sub init {
             or warn "Failed to execute repoquery: $!\n";
 
         while (my $provides = <$rpm>) {
-            really_chomp $provides;
+            really_chomp($provides);
 
             if ($provides =~ /^perl\(([^\)]+)\)(?:\s+=\s+(\S+))?\s*$/) {
                 $corelist{$1} = defined($2) ? $2 : 0;
@@ -1486,13 +1496,22 @@ sub max {
 }
 
 sub run_cmd {
-    my $cmd = shift;
-
-    verbose("Running: $cmd");
-    my $res = system($cmd);
+    verbose("\nRunning: ", join(' ', @_));
+    my $res = system(@_);
     if ($res != 0) {
-        croak("cmd failed: $!, $@");
+        if ($? == -1) {
+            croak("Failed to execute $_[0]: $!\n");
+        }
+        elsif (WIFSIGNALED($?)) {
+            croak(    "$_[0] died with signal "
+                    . WTERMSIG($?)
+                    . (($? & 128) ? ", core dumped\n" : "\n"));
+        }
+        else {
+            croak("$_[0] exited with value " . WEXITSTATUS($?) . "\n");
+        }
     }
+
     return;
 }
 
@@ -1506,6 +1525,8 @@ sub verbose {
 ##    print STDERR @_, "\n" if ($verbose);
 ##    print STDOUT @_, "\n" if ($verbose);
     carp(@_) if ($verbose);
+
+    return;
 }
 
 sub fetch {
@@ -1551,6 +1572,8 @@ LOOP: $request = HTTP::Request->new('GET' => $url)
     else {
         croak("Failed to get $url: " . $response->status_line . "\n");
     }
+
+    return;
 }
 
 sub mkdir_p {
@@ -1565,6 +1588,8 @@ sub mkdir_p {
             mkdir $partial or croak("mkdir($partial) failed: $!\n");
         }
     }
+
+    return;
 }
 
 sub update_packages {
@@ -1577,6 +1602,8 @@ sub update_packages {
     fetch("$cpan/modules/" . basename($pkgdetails), $pkgdetails);
 
     $updated = 1;
+
+    return;
 }
 
 sub build_rpm {
@@ -1597,27 +1624,15 @@ sub build_rpm {
     }
 
     # From Fedora CVS Makefile.common.
-    if (system($rpmbuild, "--define",
+    run_cmd($rpmbuild, "--define",
             "_sourcedir $dir",             "--define",
             "_builddir $dir/$spec-build",  "--define",
             "_srcrpmdir $dir/$spec-build", "--define",
             "_rpmdir $dir/$spec-build/RPMS", ($buildrpm ? "-ba" : ("-bs", "--nodeps")),
             $spec
-        ) != 0
-        )
-    {
-        if ($? == -1) {
-            croak("Failed to execute $rpmbuild: $!\n");
-        }
-        elsif (WIFSIGNALED($?)) {
-            croak(    "$rpmbuild died with signal "
-                    . WTERMSIG($?)
-                    . (($? & 128) ? ", core dumped\n" : "\n"));
-        }
-        else {
-            croak("$rpmbuild exited with value " . WEXITSTATUS($?) . "\n");
-        }
-    }
+    );
+
+    return;
 }
 
 sub list_files {
@@ -1630,6 +1645,8 @@ sub list_files {
     elsif ($type eq 'zip') {
         return map { $_->fileName(); } $archive->members();
     }
+
+    return;
 }
 
 sub extract {
@@ -1643,6 +1660,8 @@ sub extract {
     elsif ($type eq 'zip') {
         return $archive->contents($filename);
     }
+
+    return;
 }
 
 sub get_description {
@@ -1802,11 +1821,7 @@ sub check_repo {
 
         # check if it's supplied by a source only repo
         if (my $pkg = check_src_rpm($dep)) {
-            if (   exists($dep_blacklist{$pkg})
-                || $pkg =~ /^Win32::/
-                || $pkg =~ /^t::/
-                || $package =~ /^[\d\.\_]*$/
-                || $pkg =~ /^inc::/)
+            if (   exists($dep_blacklist{$pkg}))
             {
                 verbose(qq{Skipping black listed dep $pkg});
                 return;
@@ -1854,6 +1869,16 @@ sub check_repo {
 sub check_dep {
     my $module  = shift;
     my $version = shift;
+
+           if (   exists($dep_blacklist{$module})
+                || $module =~ /^Win32::/
+                || $module =~ /^t::/
+                || $module =~ /^[\d\.\_]+$/
+                || $module =~ /^inc::/)
+            {
+                verbose(qq{Skipping black-listed dep $module});
+                return;
+            }
 
     return (check_rpm("perl($module)", $version) || check_repo("perl($module)", $version));
 }

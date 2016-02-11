@@ -137,7 +137,7 @@ sub run {
     }
 
     my $cmd
-        = qq{docker run --user cpanspec --interactive --volume=$work_dir:/home/cpanspec/work_dir --workdir /home/cpanspec/work_dir cpanspec-$image  /usr/bin/perl /home/cpanspec/work_dir/cpanspec --verbose --force --build --follow --packager '$ENV{"USER"}' $target};
+        = qq{docker run  --rm --user cpanspec --interactive --volume=$work_dir:/home/cpanspec/work_dir --workdir /home/cpanspec/work_dir cpanspec-$image  /usr/bin/perl /home/cpanspec/work_dir/cpanspec --verbose --force --build --follow --packager '$ENV{"USER"}' $target};
     print("running: $cmd\n");
     system($cmd);
 
