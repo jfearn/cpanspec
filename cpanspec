@@ -46,7 +46,7 @@ cpanget [options] [module [...]]
    --srpm       -s      Build a source rpm
    --build      -b      Build source and binary rpms
    --cpan       -c      CPAN mirror URL
-   --verbose    -v      Be more verbose
+   --verbose    -v      Be more verbose, more v's for more messages
    --prefer-macros  -m  Prefer macros over environment variables in the spec
    --download-only  -D  Only download the tarball from CPAN
 
@@ -181,7 +181,7 @@ B<CPAN> environment variable, defaults to L<http://www.cpan.org/>.
 
 =item B<-v>, B<--verbose>
 
-Be more verbose.
+Be more verbose. Can be specified multiple times.
 
 =item B<-m>, B<--prefer-macros>
 
@@ -308,19 +308,20 @@ my @MACROS = (
 my %macro;
 
 my %dep_blacklist = (
-    Win32                => 1,    # We're not on win32
-    'Win32::Process'     => 1,    # We're not on win32
-    'Win32::API'         => 1,    # We're not on win32
-    'Win32::TieRegistry' => 1,    # We're not on win32
-    'Win32::Console'     => 1,
-    'DBD::Oracle'        => 1,
-    'DBI::db'            => 1, # part of DBD::Oracle
+    Win32                    => 1,    # We're not on win32
+    'Win32::Process'         => 1,    # We're not on win32
+    'Win32::API'             => 1,    # We're not on win32
+    'Win32::TieRegistry'     => 1,    # We're not on win32
+    'Win32::Console'         => 1,
+    'DBD::Oracle'            => 1,
+    'DBI::db'                => 1,    # part of DBD::Oracle
     BaseClass                => 1,    # Common test class shipped by ourselves
     TestServer               => 1,    # Likewise
     'of'                     => 1,    # o_O
     'Test::DependentModules' => 1,
     Blarg                    => 1,
     MyApp                    => 1,
+    'CPAN::Config'           => 1,    # FIXME how is this getting detected?
 );
 
 # deal with modules with incompatible versioning histories.
@@ -353,7 +354,7 @@ GetOptions(
     'srpm|s'              => \$buildsrpm,
     'build|b'             => \$buildrpm,
     'cpan|c=s'            => \$cpan,
-    'verbose|v'           => \$verbose,
+    'verbose|v+'          => \$verbose,
     'follow'              => \$follow,
     'filter-requires=s'   => \@filter_requires,
     'filter-provides=s'   => \@filter_provides,
@@ -382,23 +383,35 @@ croak("Parse::CPAN::Packages->new() failed: $!\n")
 my @builds;
 
 for my $file (@args) {
-    push @builds, process_module($file);
+    if ($file =~ /src\.rpm$/) {
+        push @builds, $file;
+    }
+    else {
+        push @builds, process_module($file);
+    }
 }
 
 if ($buildrpm && $follow) {
     foreach my $mod (@builds) {
-        $mod =~ s/::/-/g;
-        my $spec = "perl-$mod.spec";
-
-        if (-f $spec) {
-            build_n_install($spec, "$spec-build/RPMS/");
+        if ($mod =~ /src\.rpm$/) {
+            build_n_install($mod, "/home/cpanspec/rpmbuild/RPMS/");
         }
         else {
-            # check if it's a non-perl dep!
-            if (my $pkg = check_src_rpm($mod)) {
+            $mod =~ s/::/-/g;
+            my $spec = "perl-$mod.spec";
+
+            if (-f $spec) {
+                build_n_install($spec, "$spec-build/RPMS/");
             }
             else {
-                croak("cannot process $mod!");
+                # check if it's a non-perl dep!
+                if (my $pkg = check_src_rpm($mod)) {
+                    my $srpm = download_srpm($pkg);
+                    build_n_install($srpm, "/home/cpanspec/rpmbuild/RPMS/");
+                }
+                else {
+                    croak("cannot process $mod!");
+                }
             }
         }
     }
@@ -611,36 +624,14 @@ sub process_module {
     my $vendorlib = ($noarch ? "vendorlib" : "vendorarch");
     my $lib = "\%{perl_$vendorlib}";
 
-    # FIXME any modules that are black listed and detected as deps need to be added to the filter_requires
-    # after all deps are processed
-    if($module eq 'Data::ObjectDriver') {
+# FIXME any modules that are black listed and detected as deps need to be added to the filter_requires
+# after all deps are processed or the rpm dep checker will add it.
+    if ($module eq 'Data::ObjectDriver') {
         push(@filter_requires, 'DBD::Oracle');
         push(@filter_requires, 'DBI::db');
     }
-
-    if (@filter_requires) {
-        my $script = "$name-filter-requires.sh";
-        verbose("Writing $script...");
-        my $sh;
-        if ($force) {
-            rename($script, "$script~") if (-e $script);
-            $sh = new FileHandle ">$script";
-        }
-        else {
-            $sh = new FileHandle $script, O_WRONLY | O_CREAT | O_EXCL;
-        }
-        croak("Failed to create $script: $!\n") if (!$sh);
-
-        print $sh "#!/bin/sh\n\n"
-            . "\@\@PERL_REQ\@\@ \"\$\@\" | sed -e '/^$filter_requires[0]\$/d'";
-        print $sh " \\\n    -e '/^perl\($filter_requires[0]\)\$/d'";
-        if (@filter_requires > 1) {
-            for my $dep (@filter_requires[ 1 .. $#filter_requires ]) {
-                print $sh " \\\n    -e '/^$dep\$/d'";
-                print $sh " \\\n    -e '/^perl\($dep\)\$/d'";
-            }
-        }
-        print $sh "\n";
+    elsif ($module eq 'JSON::RPC') {
+        push(@filter_requires, 'MyApp');
     }
 
     if (@filter_provides) {
@@ -913,7 +904,7 @@ sub process_module {
     }
     $license = "CHECK(GPL+ or Artistic)" if (!$license);
 
-    # FIXME some modules have deps missing from META so juct check anyway
+    # FIXME some modules have deps missing from META so just check anyway
     my $p = Module::ExtractUse->new;
     foreach my $file (grep /\.(?:PL|pm)$/, @files) {
         my $code = extract($archive, $type, "$path/$file");
@@ -1174,15 +1165,6 @@ END
         printf $spec "%-16s%s\n", "Provides:", $prov;
     }
 
-    if (@filter_requires) {
-        print $spec <<END
-
-Source98:       $name-filter-requires.sh
-\%global real_perl_requires \%{__perl_requires}
-\%define __perl_requires \%{_tmppath}/\%{name}-\%{version}-\%{release}-\%(\%{__id_u} -n)-filter-requires
-END
-    }
-
     if (@filter_provides) {
         print $spec <<END
 
@@ -1199,17 +1181,27 @@ END
 \%description
 $description
 
+END
+
+    if (@filter_requires || @filter_provides) {
+        print $spec "\n" . '%{?perl_default_filter}' . "\n";
+    }
+
+    if (@filter_requires) {
+        print $spec "\n";
+        verbose(join(',', @filter_requires));
+        foreach my $dep (@filter_requires) {
+            print $spec '%filter_from_requires /' . $dep . '/d' . "\n";
+##                 print $spec " \\\n    -e '/^perl\($dep\)\$/d'";
+        }
+
+    }
+
+    print $spec <<END;
+
 \%prep
 \%setup -q@{[($noprefix ? "" : " -n $buildpath")]}
 END
-
-    if (@filter_requires) {
-        print $spec <<'END';
-
-sed -e 's,@@PERL_REQ@@,%{real_perl_requires},' %{SOURCE98} > %{__perl_requires}
-chmod +x %{__perl_requires}
-END
-    }
 
     if (@filter_provides) {
         print $spec <<'END';
@@ -1315,23 +1307,6 @@ END
     }
 
     print $spec <<END;
-find $macro{buildroot} -type f -print | sed "s\@^$macro{buildroot}\@\@g" > filelist
-
-END
-
-## FIXME WTH is the regex necessary for?
-    if (0
-        && $module
-        =~ /^(?:Test::ConsistentVersion|Lingua::Stem::Snowball|Module::ExtractUse|Test::Differences|MooseX::Types)$/
-        )
-    {
-        print $spec <<'END';
-%{__perl} -p -i -e 's/\.3pm$/\.3pm.gz/g' filelist
-
-END
-    }
-
-    print $spec <<END;
 \%check@{[($compat ? ' || :' : '')]}
 END
 
@@ -1359,9 +1334,7 @@ END
     print $spec <<END;
 
 \%clean
-rm -rf $macro{buildroot}@{[
-    (@filter_requires ? ' %{__perl_requires}' : '') .
-    (@filter_provides ? ' %{__perl_provides}' : '')]}
+rm -rf $macro{buildroot}
 
 END
 
@@ -1448,16 +1421,16 @@ sub init {
         my $opts      = qq{  -q repoquery --provides perl|};
 
         if ($repoquery) {
-          if ($buildrpm && $follow) {
-            run_cmd('sudo dnf clean all --enablerepo=*');
-            run_cmd('sudo dnf makecache --enablerepo=*');
-          }
+            if ($buildrpm && $follow) {
+                run_cmd('sudo dnf clean all --enablerepo=*');
+                run_cmd('sudo dnf makecache --enablerepo=*');
+            }
         }
         else {
-          if ($buildrpm && $follow) {
-            run_cmd('sudo yum clean all --enablerepo=*');
-            run_cmd('sudo yum makecache --enablerepo=*');
-          }
+            if ($buildrpm && $follow) {
+                run_cmd('sudo yum clean all --enablerepo=*');
+                run_cmd('sudo yum makecache --enablerepo=*');
+            }
             $repoquery = which("repoquery");
             $opts      = qq{ --provides perl|};
         }
@@ -1521,10 +1494,17 @@ sub print_version {
 }
 
 sub verbose {
+    my $msg = shift;
+    my $level = shift || 1;
 
-##    print STDERR @_, "\n" if ($verbose);
-##    print STDOUT @_, "\n" if ($verbose);
-    carp(@_) if ($verbose);
+    if ($verbose && $level >= $verbose) {
+        if ($verbose <= 3) {
+            print STDERR $msg, "\n";
+        }
+        else {
+            carp($msg);
+        }
+    }
 
     return;
 }
@@ -1624,12 +1604,13 @@ sub build_rpm {
     }
 
     # From Fedora CVS Makefile.common.
-    run_cmd($rpmbuild, "--define",
-            "_sourcedir $dir",             "--define",
-            "_builddir $dir/$spec-build",  "--define",
-            "_srcrpmdir $dir/$spec-build", "--define",
-            "_rpmdir $dir/$spec-build/RPMS", ($buildrpm ? "-ba" : ("-bs", "--nodeps")),
-            $spec
+    run_cmd(
+        $rpmbuild,                     "--define",
+        "_sourcedir $dir",             "--define",
+        "_builddir $dir/$spec-build",  "--define",
+        "_srcrpmdir $dir/$spec-build", "--define",
+        "_rpmdir $dir/$spec-build/RPMS", ($buildrpm ? "-ba" : ("-bs", "--nodeps")),
+        $spec
     );
 
     return;
@@ -1821,8 +1802,7 @@ sub check_repo {
 
         # check if it's supplied by a source only repo
         if (my $pkg = check_src_rpm($dep)) {
-            if (   exists($dep_blacklist{$pkg}))
-            {
+            if (exists($dep_blacklist{$pkg})) {
                 verbose(qq{Skipping black listed dep $pkg});
                 return;
             }
@@ -1870,15 +1850,15 @@ sub check_dep {
     my $module  = shift;
     my $version = shift;
 
-           if (   exists($dep_blacklist{$module})
-                || $module =~ /^Win32::/
-                || $module =~ /^t::/
-                || $module =~ /^[\d\.\_]+$/
-                || $module =~ /^inc::/)
-            {
-                verbose(qq{Skipping black-listed dep $module});
-                return;
-            }
+    if (   exists($dep_blacklist{$module})
+        || $module =~ /^Win32::/
+        || $module =~ /^t::/
+        || $module =~ /^[\d\.\_]+$/
+        || $module =~ /^inc::/)
+    {
+        verbose(qq{Skipping black-listed dep $module});
+        return;
+    }
 
     return (check_rpm("perl($module)", $version) || check_repo("perl($module)", $version));
 }
