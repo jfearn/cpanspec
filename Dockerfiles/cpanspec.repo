@@ -1,0 +1,7 @@
+[cpanspec]
+name = Locally build packages
+baseurl = file:///home/cpanspec/work_dir/repo/
+skip_if_unavailable=1
+gpgcheck=0
+enabled=1
+

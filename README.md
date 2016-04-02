@@ -37,9 +37,15 @@ docker rmi $IDs
 
 ## Termiante a runaway container ##
 {{{
-docker ps -q | xargs docker stop
-docker ps -qa | xargs docker rm
-docker images -q | xargs docker rmi
+docker ps -q | xargs --no-run-if-empty docker stop
+docker ps -qa | xargs --no-run-if-empty docker rm
+docker images -q | xargs --no-run-if-empty docker rmi
 }}}
 
+
+
+http://download.eng.bos.redhat.com/released/mikem-tmp/fedora-epel-7/7/$arch/
+
+
+mockchain --localrepo=/tmp/eng-rhel-7 -r eng-rhel-7 $srpm
 

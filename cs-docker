@@ -73,9 +73,10 @@ else {
 exit;
 
 sub build {
-    my $cmd = qq{docker build --rm --tag cpanspec-$image --file "$docker_dir/$image" "$docker_dir"};
+    my $cmd
+        = qq{docker build --rm --tag cpanspec-$image --file "$docker_dir/$image" "$docker_dir"};
     print("running: $cmd\n");
-    
+
     system($cmd);
 
     return;
@@ -83,8 +84,8 @@ sub build {
 
 sub run {
 
-    my $name   = join('-', @modules) . " ";
-    my $target = join(' ', @modules) . " ";
+    my $name      = join('-', @modules) . " ";
+    my $target    = '';
     my $file_name = undef;
 
     if (@files) {
@@ -95,11 +96,10 @@ sub run {
         }
     }
 
-        chop($name);
-        chop($target);
-
-        $name =~ s/::/-/g;
-        $name =~ s/ /-/g;
+    chop($name);
+    $target .= join(' ', @modules);
+    $name =~ s/::/-/g;
+    $name =~ s/ /-/g;
 
     if ($create_dir) {
         unless (-d "$work_dir") {
@@ -114,9 +114,7 @@ sub run {
 
     $work_dir = "$work_dir/$image/$name";
 
-    # always remove the tree as it gets real ugly sometimes if there are stale files
-    rmtree("$work_dir") if (-d "$work_dir");
-    make_path("$work_dir");
+    make_path("$work_dir") unless(-d "$work_dir");
 
     croak("The working directory '$work_dir' does not exist!") unless (-d "$work_dir");
 
@@ -131,6 +129,7 @@ sub run {
 
     if (@files) {
         foreach my $file (@files) {
+            $file_name = fileparse($file);
             print("Copying $file_name in to work dir\n");
             copy($file, "$work_dir/$file_name") or croak("Copy failed: $!");
         }

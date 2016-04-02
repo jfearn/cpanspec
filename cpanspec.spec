@@ -1,6 +1,6 @@
 Name:           cpanspec
 Version:        2.0_1
-Release:        0%{?dist}.t1
+Release:        0%{?dist}.t7
 Summary:        Generate a spec file for a CPAN module
 License:        GPL+ or Artistic
 Group:          Development/Libraries
@@ -11,14 +11,16 @@ BuildArch:      noarch
 BuildRequires:  perl(Archive::Tar)
 BuildRequires:  perl(Archive::Zip)
 BuildRequires:  perl(IO::Uncompress::Bunzip2)
+BuildRequires:  perl(IPC::Run)
 BuildRequires:  perl(LWP::UserAgent)
-BuildRequires:  perl(Module::Build) >= 0.36
+BuildRequires:  perl-Module-Build >= 0.36
 BuildRequires:  perl(Module::CoreList)
-BuildRequires:  perl(Module::ExtractUse)
+BuildRequires:  perl-Module-ExtractUse >= 0.33
 BuildRequires:  perl(Parse::CPAN::Packages)
 BuildRequires:  perl(Pod::Simple::TextContent)
 BuildRequires:  perl(Text::Autoformat)
 BuildRequires:  perl(YAML)
+BuildRequires:  perl-Perl-Version >= 1.013
 Requires:       perl(:MODULE_COMPAT_%(eval "`%{__perl} -V:version`"; echo $version))
 Requires:       yum-utils
 Requires:       gcc
