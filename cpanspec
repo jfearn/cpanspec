@@ -328,13 +328,16 @@ my %dep_blacklist = (
     'CPAN::Config'           => 1,    # FIXME how is this getting detected?
 );
 
-# deal with modules with incompatible versioning histories.
+# FIXME deal with modules with incompatible versioning histories.
 # Is there a better way to get rpm to grok 5.562 < 5.57 ?
 # $ rpmdev-vercmp 5.562 5.57
 # 5.562 > 5.57
 # $ rpmdev-vercmp 0:5.562 1:5.57
 # 0:5.562 < 1:5.57
 #
+# perl -e 'use Perl::Version; my $v1 = Perl::Version->new( q{5.562} ); my $v2 = Perl::Version->new( q{5.57} ); print ($v1->vcmp( $v2 ) > 0 ? "yes" : "no"), "\n";'
+# yes
+
 my %min_versions = ('Exporter' => '5.57',);
 
 # Set locale to en_US.UTF8 so that dates in changelog will be correct
@@ -385,8 +388,6 @@ $packages = Parse::CPAN::Packages->new($pkgdetails)
 croak("Parse::CPAN::Packages->new() failed: $!\n")
     if (!defined($packages));
 
-#my @builds;
-
 for my $mod (@args) {
     if ($buildrpm && $follow) {
         if ($mod =~ /src\.rpm$/) {
@@ -407,13 +408,11 @@ for my $mod (@args) {
                 }
                 else {
                     process_module($mod);
-##                    build_n_install($spec, "$spec-build/RPMS/");
                 }
             }
         }
     }
     else {
-#        push @builds, process_module($mod);
         process_module($mod);
     }
 }
@@ -553,7 +552,7 @@ sub process_module {
     }
     if ($bogus) {
         warn "Skipping $file with $bogus path elements!\n";
-##        next;
+##        next; # FIXME hmm not sure this is worth enforcing if things work anyway, and having it does break some cpan modules.
     }
 
     my $url = "http://search.cpan.org/dist/$name/";
@@ -639,6 +638,7 @@ sub process_module {
 # FIXME any modules that are black listed and detected as deps need to be added to the filter_requires
 # after all deps are processed or the rpm dep checker will add it.
 # FIXME BUGBUG this is really broken as these are applied to all following packages as well
+# FIXME move this to an external config file so it's easier to update and track
     if ($module eq 'Data::ObjectDriver') {
         push(@filter_reqs, 'DBD::Oracle');
         push(@filter_reqs, 'DBI::db');
@@ -850,6 +850,7 @@ sub process_module {
         %requires = %{ $meta->{requires} } if ($meta->{requires});
 ## FIXME recommends often causes circular deps.
 ## Make this optional or make it work better...
+# FIXME This should be added back for rpm versions that support reccomends
         if (0 && $meta->{recommends}) {
             for my $dep (keys(%{ $meta->{recommends} })) {
                 $requires{$dep} = $requires{$dep}
@@ -929,7 +930,8 @@ sub process_module {
     }
     $license = "CHECK(GPL+ or Artistic)" if (!$license);
 
-    # FIXME some modules have deps missing from META so just check anyway
+    # some modules have deps missing from META so just check anyway
+    # some other modules have broken META.yaml files as well :(
     my $p = Module::ExtractUse->new;
     foreach my $file (grep /\.(?:PL|pm)$/, @files) {
         next if($file =~ m{Conflicts.pm$});
@@ -1097,10 +1099,8 @@ END
                     verbose(
                         "$dep >= $build_requires{$dep} is not available for $module, adding it to the list.\n"
                     );
-##                    push @build_order, process_module($dep);
                     my $spec = "perl-$dep.spec";
                     process_module($dep); ## FIXME is process_module really create_spec?
-##                    build_n_install($spec, "$spec-build/RPMS/");
                 }
             }
         }
@@ -1112,6 +1112,7 @@ END
         print $spec "\n";
     }
 
+    # FIXME Move these to an external config file
     ## FIXME modules that don't require deps properly :-/
     push(@build_reqs, 'subversion') if ($module eq 'SVN::Look');
 
@@ -1212,6 +1213,7 @@ END
     my $paths
         = qq{INSTALLVENDORMAN3DIR=$macro{buildroot}%{perlvendorman3} INSTALLVENDORMAN1DIR=$macro{buildroot}%{perlvendorman1}};
 
+    # FIXME probably should make this behavior optional
     # For packages that override core packages
     $paths
         = "INSTALLSITEMAN3DIR=/usr/local/share/man/man3 INSTALLSITEMAN1DIR=/usr/local/share/man/man1"
@@ -1220,7 +1222,7 @@ END
     $paths = "";
 
     if ($usebuildpl) {
-        $paths = "";    #lc($paths);
+        $paths = "";    #lc($paths); ## Confilcts with Module::Build::Simple??
 
         print $spec <<END;
 \%{__perl} Build.PL --installdirs=$instdir@{[$noarch ? '' : qq{ optimize="$macro{optimize}"} ]} $paths
@@ -1311,6 +1313,7 @@ END
         print $spec "./Build test\n";
     }
     else {
+        ## Move to external config file
         print $spec "make test\n"
             unless (
             ($specfile eq
@@ -1422,9 +1425,9 @@ sub init {
         }
         else {
             if ($buildrpm && $follow) {
-
-                #                run_cmd('sudo', 'yum', 'clean', 'all', '--enablerepo' ,'*');
-                #                run_cmd('sudo', 'yum', 'makecache');
+## FIXME Try to get caching working for speeeed
+##                run_cmd('sudo', 'yum', 'clean', 'all', '--enablerepo' ,'*');
+##                run_cmd('sudo', 'yum', 'makecache');
             }
             $repoquery = which("repoquery");
             @opts      = qw{--provides perl};
@@ -1597,7 +1600,6 @@ sub build_rpm {
             or croak("mkdir($spec-build/RPMS) failed: $!\n");
     }
 
-    # From Fedora CVS Makefile.common.
     run_cmd(
         $rpmbuild,                     "--define",
         "_sourcedir $dir",             "--define",
@@ -1988,11 +1990,8 @@ sub install_deps {
                 build_n_install($srpm, "/home/cpanspec/rpmbuild/RPMS/");
             }
             else {
-##                $dep =~ s/perl\((.*)\).*/$1/;
                 my $spec = "perl-$package.spec";
                 process_module($package);
-##                build_n_install($spec, "$spec-build/RPMS/");
-##                push(@builds, process_module($dep));
             }
             verbose("Completed missing dep $package for $file\n");
             push(@processed, $package);
