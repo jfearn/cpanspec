@@ -11,46 +11,35 @@ Upstream project is at [sourceforge](http://cpanspec.sourceforge.net/). More inf
 
 This only needs to be done occassionally to keep Fedora up to date.
 
-{{{
-cs-docker --build --image fedora22
-}}}
+	cs-docker --build --image fedora22
 
 ## Create RPMs for a Perl Module and all missing deps ##
 
-{{{
-cs-docker --create_dir --image fedora22 --module Test::ConsistentVersion
-}}}
+	cs-docker --create_dir --image fedora22 --module Test::ConsistentVersion
 
 ## Creat RPMs for a local perl SRPM then a CPAN Module ##
-{{{
-cs-docker --create --image fedora22 --file gdome2-0.8.0-1.src.rpm --module Net::SAML2
-}}}
+
+	cs-docker --create --image fedora22 --file gdome2-0.8.0-1.src.rpm --module Net::SAML2
 
 
 ## Shell in to the Fedora 22 container ##
-{{{
-docker run --user=cpanspec --rm -i -t -v ~/cpanspec/fedora22:/home/cpanspec/work_dir cpanspec-fedora22 /usr/bin/bash
-}}}
+
+	docker run --user=cpanspec --rm -i -t -v ~/cpanspec/fedora22:/home/cpanspec/work_dir cpanspec-fedora22 /usr/bin/bash
 
 ## Some useful Docker comamnds ##
 
-{{{
-docker images 
-docker rmi $IDs
-}}}
+	docker images 
+	docker rmi $IDs
 
 ## Termiante all containers ##
-{{{
-docker ps -q | xargs --no-run-if-empty docker stop
-}}}
+
+	docker ps -q | xargs --no-run-if-empty docker stop
 
 ## Delete all local conrtainers ##
-{{{
-docker ps -qa | xargs --no-run-if-empty docker rm
-}}}
+
+	docker ps -qa | xargs --no-run-if-empty docker rm
 
 ## Delete all local images ##
-{{{
-docker images -q | xargs --no-run-if-empty docker rmi
-}}}
+
+	docker images -q | xargs --no-run-if-empty docker rmi
 
