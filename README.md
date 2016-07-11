@@ -17,11 +17,11 @@ This only needs to be done occasionally to keep Fedora up to date.
 
 ## Create RPMs for a Perl Module and all missing deps ##
 
-	cs-docker --create_dir --image fedora22 --module Test::ConsistentVersion
+	cs-docker --create_dir --image fedora22 --package Test::ConsistentVersion
 
 ## Create RPMs for a local perl SRPM then a CPAN Module ##
 
-	cs-docker --create --image fedora22 --file gdome2-0.8.0-1.src.rpm --module Net::SAML2
+	cs-docker --create --image fedora22 --package gdome2-0.8.0-1.src.rpm --package Test-ConsistentVersion-0.1.tgz --package Net::SAML2
 
 ## Copy the generated yum repo to another server ##
 

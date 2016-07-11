@@ -39,8 +39,7 @@ use File::Copy;
 
 my $man  = 0;
 my $help = 0;
-my @modules;
-my @files;
+my @packages;
 my $image      = undef;
 my $create_dir = undef;
 my $work_dir   = $ENV{"HOME"} . '/cpanspec';
@@ -52,8 +51,7 @@ GetOptions(
     'man'          => \$man,
     'create_dir'   => \$create_dir,
     'build'        => \$build,
-    'module=s'     => \@modules,
-    'file=s'       => \@files,
+    'package=s'     => \@packages,
     'image=s'      => \$image,
     'work_dir=s'   => \$work_dir,
     'docker_dir=s' => \$docker_dir,
@@ -61,7 +59,7 @@ GetOptions(
 
 pod2usage(-verbose => 1) if ($help);
 pod2usage(-verbose => 2) if ($man);
-pod2usage(-verbose => 1) unless ($image && ($build || (@modules || @files)));
+pod2usage(-verbose => 1) unless ($image && ($build || @packages));
 
 if ($build) {
     build();
@@ -84,20 +82,24 @@ sub build {
 
 sub run {
 
-    my $name      = join('-', @modules) . " ";
+    my $name      = "";
     my $target    = '';
-    my $file_name = undef;
+    my %files;
 
-    if (@files) {
-        foreach my $file (@files) {
-            $file_name = fileparse($file);
+    foreach my $pkg (@packages) {
+        if( -f $pkg) {
+            my $file_name = fileparse($pkg);
             $name   .= "$file_name-";
             $target .= "/home/cpanspec/work_dir/$file_name ";
+            $files{$file_name} = $pkg;
+        } else {
+            $target .=  "$pkg " ;
+            $name   .= "$pkg-";
+            
         }
-    }
+   }
 
     chop($name);
-    $target .= join(' ', @modules);
     $name =~ s/::/-/g;
     $name =~ s/ /-/g;
 
@@ -127,13 +129,11 @@ sub run {
         copy("/usr/bin/cpanspec", "$work_dir/cpanspec") or croak("Copy failed: $!");
     }
 
-    if (@files) {
-        foreach my $file (@files) {
-            $file_name = fileparse($file);
+        foreach my $file_name (keys(%files)) {
+            $file_name = fileparse($file_name);
             print("Copying $file_name in to work dir\n");
-            copy($file, "$work_dir/$file_name") or croak("Copy failed: $!");
+            copy($files{$file_name}, "$work_dir/$file_name") or croak("Copy failed: $!");
         }
-    }
 
     my $cmd
         = qq{docker run  --rm --user cpanspec --interactive --volume=$work_dir:/home/cpanspec/work_dir --workdir /home/cpanspec/work_dir cpanspec-$image  /usr/bin/perl /home/cpanspec/work_dir/cpanspec --verbose --force --build --follow --packager '$ENV{"USER"}' $target};
