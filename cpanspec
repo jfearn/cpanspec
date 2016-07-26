@@ -328,9 +328,10 @@ my %dep_blacklist = (
     'MyApp'                  => 1,
     'CPAN::Config'           => 1,    # FIXME how is this getting detected?
     'VMS::Filespec'          => 1,
-    'Test::Run::Builder' =>
-        1,    # FIXME things in inc should be ignored even if used in Build.PL
-    'Test::Kwalitee' => 1, # almost never a real dep and people put it in t/ instead of xt/
+    'Test::Run::Builder'     => 1,    # FIXME things in inc should be ignored
+    'Test::Kwalitee'         => 1,    # almost never a real dep
+    'MyModuleBuilder'        => 1,
+    'indirect'               => 1,
 
 );
 
@@ -376,7 +377,7 @@ GetOptions(
     'add-buildrequires=s' => \@add_buildrequires,
     'version'             => \&print_version,
     'prefer-macros|m'     => \$macros,
-) or pod2usage({-exitval => 1, -verbose => 0});
+) || pod2usage({-exitval => 1, -verbose => 0});
 
 pod2usage({-exitval => 0, -verbose => 1}) if($help);
 pod2usage({-exitval => 1, -verbose => 0}) if(!@ARGV);
@@ -432,7 +433,9 @@ run_cmd2(
 run_cmd2(
     ['find', "/home/cpanspec/rpmbuild", '-name', "*.src.rpm", '-type', 'f'],
     '|',
-    ['xargs', '--no-run-if-empty', 'cp', '-v', '-f', '-a', '-t', "/home/cpanspec/work_dir/SRPMS"]
+    [   'xargs', '--no-run-if-empty', 'cp', '-v', '-f', '-a', '-t',
+        "/home/cpanspec/work_dir/SRPMS"
+    ]
 );
 
 exit;
@@ -538,11 +541,11 @@ sub process_module {
             }
         }
         $archive = Archive::Tar->new($f, 1)
-            or croak("Archive::Tar->new() failed: $!\n");
+            || croak("Archive::Tar->new() failed: $!\n");
     }
     elsif($type eq 'zip') {
         $archive = Archive::Zip->new()
-            or croak("Archive::Zip->new() failed: $!\n");
+            || croak("Archive::Zip->new() failed: $!\n");
         croak("Read error on $file\n") unless($archive->read($file) == AZ_OK);
     }
 
@@ -888,8 +891,8 @@ sub process_module {
 
         # FIXME - I'm not sure this is sufficient...
         if(    $meta->{script_files}
-            or $meta->{scripts}
-            or(grep m{^bin/.+$|^script(s)?/.+|^arch/.+$}, @files))
+            || $meta->{scripts}
+            || (grep m{^bin/.+$|^script(s)?/.+|^arch/.+$}, @files))
         {
             $scripts = 1;
         }
@@ -949,7 +952,7 @@ sub process_module {
     }
 
     # FIXME weird EXE_FILES setting when it has none ...
-    $scripts = 0 if(($module eq 'Exporter::Tiny') or ($module eq 'File::Find::Object'));
+    $scripts = 0 if(($module eq 'Exporter::Tiny') || ($module eq 'File::Find::Object'));
 
     if(my @licenses = grep /license|copyright|copying/i, @doc) {
         if(!$license) {
@@ -979,12 +982,12 @@ sub process_module {
     } @{$p->arrayref_out_of_eval()};
 
     # Add build dependencies for modules used in tests.
-    my @tests = grep {$_ eq "test.pl" or $_ =~ /^t\/.*\.t$/} @files;
+    my @tests = grep {$_ eq "test.pl" || $_ =~ /^t\/.*\.t$/} @files;
     use Module::ExtractUse;
     my %bogus_dep = ();
     for my $testfile (@tests) {
         my $extract_o_matic = Module::ExtractUse->new()
-            or croak("Module::ExtractUse->new failed: $!\n");
+            || croak("Module::ExtractUse->new failed: $!\n");
         my $test = extract($archive, $type, $path . '/' . $testfile);
         if(!defined($test)) {
             warn "Failed to extract $testfile from $archive: $!\n";
@@ -1419,7 +1422,7 @@ END
 
     $spec->close();
 
-    build_rpm($specfile) if($buildsrpm or($buildrpm && !$follow));
+    build_rpm($specfile) if($buildsrpm || ($buildrpm && !$follow));
 
     build_n_install($specfile, "/home/cpanspec/rpmbuild/") if($buildrpm && $follow);
 
@@ -1442,7 +1445,7 @@ sub init {
 
     really_chomp($packager);
 
-    if(!$packager or $packager eq "\%packager") {
+    if(!$packager || $packager eq "\%packager") {
         croak(    "\%packager not defined in ~/.rpmmacros."
                 . "  Please add or use --packager option.\n");
     }
@@ -1511,7 +1514,7 @@ sub run_cmd {
 
     my @cmd = @_;
     my($in, $out, $err);
-    run(\@cmd, \$in, \$out, \$err) or croak("Error: $?\nerr: $err\n\$\@: $@");
+    run(\@cmd, \$in, \$out, \$err) || croak("Error: $?\nerr: $err\n\$\@: $@");
     verbose("out: $out\nerr: $err\n");
     return($out, $err);
 }
@@ -1522,7 +1525,7 @@ sub run_cmd2 {
 
     my($in, $out, $err);
 
-    run($_[0], \$in, $_[1], $_[2], \$out) or croak("Error: $?\n$err");
+    run($_[0], \$in, $_[1], $_[2], \$out) || croak("Error: $?\n$err");
     verbose("out: $out\nerr: $@\n");
 
     return($out, $@);
@@ -1556,21 +1559,21 @@ sub fetch {
     verbose("Fetching $file from $url...");
 
     my $ua = LWP::UserAgent->new('env_proxy' => 1)
-        or croak("LWP::UserAgent->new() failed: $!\n");
+        || croak("LWP::UserAgent->new() failed: $!\n");
 
     my $request;
 LOOP: $request = HTTP::Request->new('GET' => $url)
-        or croak("HTTP::Request->new() failed: $!\n");
+        || croak("HTTP::Request->new() failed: $!\n");
 
     my @buf = stat($file);
     $request->if_modified_since($buf[9]) if(@buf);
 
     # FIXME - Probably should do $ua->request() here and skip loop detection.
     my $response = $ua->simple_request($request)
-        or croak("LWP::UserAgent->simple_request() failed: $!\n");
+        || croak("LWP::UserAgent->simple_request() failed: $!\n");
 
     push(@locations, $url);
-    if($response->code eq "301" or $response->code eq "302") {
+    if($response->code eq "301" || $response->code eq "302") {
         $url = $response->header('Location');
         croak("Redirect loop detected! " . join("\n ", @locations, $url) . "\n")
             if(grep {$url eq $_} @locations);
@@ -1579,7 +1582,7 @@ LOOP: $request = HTTP::Request->new('GET' => $url)
 
     if($response->is_success) {
         my $fh = new FileHandle ">$file"
-            or croak("Can't write to $file: $!\n");
+            || croak("Can't write to $file: $!\n");
         print $fh $response->content;
         $fh->close();
 
@@ -1605,7 +1608,7 @@ sub mkdir_p {
         my $partial = "/" . join("/", @path[0 .. $n]);
         if(!-d $partial) {
             verbose("mkdir($partial)");
-            mkdir $partial or croak("mkdir($partial) failed: $!\n");
+            mkdir $partial || croak("mkdir($partial) failed: $!\n");
         }
     }
 
@@ -1635,12 +1638,12 @@ sub build_rpm {
     verbose("Building " . ($buildrpm ? "rpms" : "source rpm") . " from $spec");
     if(!-d "$spec-build") {
         verbose("mkdir($spec-build)");
-        mkdir "$spec-build" or croak("mkdir($spec-build) failed: $!\n");
+        mkdir "$spec-build" || croak("mkdir($spec-build) failed: $!\n");
     }
     if(!-d "$spec-build") {
         verbose("mkdir($spec-build)");
         mkdir "$spec-build"
-            or croak("mkdir($spec-build) failed: $!\n");
+            || croak("mkdir($spec-build) failed: $!\n");
     }
 
     run_cmd(
@@ -1703,7 +1706,7 @@ sub get_description {
         if($args{module} !~ /::/);
 
     for my $file (@pmfiles) {
-        $pm = (grep {$_ eq $file or $_ eq "./$file"}
+        $pm = (grep {$_ eq $file || $_ eq "./$file"}
                 list_files($args{archive}, $args{type}))[0];
         last if $pm;
     }
@@ -1713,7 +1716,7 @@ sub get_description {
 
         if(my $content = extract($args{archive}, $args{type}, $pm)) {
             my $parser = Pod::Simple::TextContent->new()
-                or croak("Pod::Simple::TextContent->new() failed: $!\n");
+                || croak("Pod::Simple::TextContent->new() failed: $!\n");
             $parser->no_whining(1);
             my $rendered = "";
             $parser->output_string(\$rendered);
@@ -1745,7 +1748,7 @@ sub get_description {
     }
 
     if(my $readme
-        = (sort {length($a) <=> length($b) or $a cmp $b} (grep /README/i, @{$args{files}}))
+        = (sort {length($a) <=> length($b) || $a cmp $b} (grep /README/i, @{$args{files}}))
         [0])
     {
         verbose("Trying to fetch description from $readme...");
