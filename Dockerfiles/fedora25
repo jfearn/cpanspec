@@ -1,15 +1,12 @@
-FROM fedora:22
-
+FROM fedora:25
 
 MAINTAINER "Jeff Fearn" <jfearn@redhat.com>
-
-RUN useradd -ms /bin/bash cpanspec
-RUN echo 'cpanspec ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 # Install cpanspec deps
 RUN dnf -y install \
   'perl(Archive::Tar)' \
   'perl(Archive::Zip)' \
+  'perl(bignum)' \
   'perl(IO::Uncompress::Bunzip2)' \
   'perl(IPC::Run)' \
   'perl(LWP::UserAgent)' \
@@ -23,27 +20,28 @@ RUN dnf -y install \
   'perl(Test::Pod)' \
   'perl(Test::Pod::Coverage)' \
   'perl(Text::Autoformat)' \
+  'perl(Perl::Version)' \
   'perl(YAML)' \
   createrepo \
   deltarpm \
   gcc \
-  python-dnf-plugins-core \
+  dnf-plugins-core \
   rpm \
   rpm-build \
   rpmdevtools \
   sudo \
   tar \
-  which
+  which \
+  perl-CPAN \
+  perl-Test \
+  wget \
+  perl-generators
 
-RUN dnf -y upgrade --exclude=util-linux --exclude=*.i686;
+RUN  dnf -y upgrade --exclude=util-linux --exclude=*.i686;
 
-RUN dnf -y install 'perl(Perl::Version)'
-
-USER cpanspec
-ENV HOME /home/cpanspec
-WORKDIR /tmp/deps
-RUN rpmdev-setuptree
-
-USER root
 ADD cpanspec.repo /etc/yum.repos.d/cpanspec.repo
+
+RUN dnf clean all
+
+RUN rpmdev-setuptree
 

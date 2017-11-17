@@ -1,0 +1,47 @@
+FROM fedora:27
+
+MAINTAINER "Jeff Fearn" <jfearn@redhat.com>
+
+# Install cpanspec deps
+RUN dnf -y install \
+  'perl(Archive::Tar)' \
+  'perl(Archive::Zip)' \
+  'perl(bignum)' \
+  'perl(IO::Uncompress::Bunzip2)' \
+  'perl(IPC::Run)' \
+  'perl(LWP::UserAgent)' \
+  'perl(Module::Build)' \
+  'perl(Module::CoreList)' \
+  'perl(Module::ExtractUse)' \
+  'perl(Parse::CPAN::Packages)' \
+  'perl(Pod::Simple::TextContent) >= 3.29' \
+  'perl(Test::Deep)' \
+  'perl(Test::NoWarnings)' \
+  'perl(Test::Pod)' \
+  'perl(Test::Pod::Coverage)' \
+  'perl(Text::Autoformat)' \
+  'perl(Perl::Version)' \
+  'perl(YAML)' \
+  createrepo \
+  deltarpm \
+  gcc \
+  dnf-plugins-core \
+  rpm \
+  rpm-build \
+  rpmdevtools \
+  sudo \
+  tar \
+  which \
+  perl-CPAN \
+  perl-Test \
+  wget \
+  perl-generators
+
+RUN  dnf -y upgrade --exclude=util-linux --exclude=*.i686;
+
+ADD cpanspec.repo /etc/yum.repos.d/cpanspec.repo
+
+RUN dnf clean all
+
+RUN rpmdev-setuptree
+

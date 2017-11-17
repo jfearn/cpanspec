@@ -1,0 +1,143 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+cs-docker
+
+=head1 VERSION
+
+This document describes version 0.1
+
+=head1 SYNOPSIS
+
+cs-docker <options>
+
+  --help|h	  Display help text
+  --man		  Display man page
+  --image         The Docker image to use. MANDATORY
+  --build         Build the Docker image.
+  --package=s     The CPAN module or archive to package. Can be set multiple times.
+  --volume=s      Override the docker volume. Defaults to: 'cpanspec-$image'.
+  --docker_dir=s  The directory to look for dockerfiles and sources. Defaults to: '/usr/share/cpanspec/Dockerfiles'.
+  --lable=s       Override the volume and image name.          
+=head1 DESCRIPTION
+
+Convenience wrapper for using cpanspec in Docker!
+
+=cut
+
+use warnings;
+use strict;
+use Getopt::Long;
+use Pod::Usage;
+use Carp;
+use File::Path qw(make_path rmtree);
+use File::Basename;
+use File::Copy;
+
+my $man  = 0;
+my $help = 0;
+my @packages;
+my $image      = undef;
+my $volume     = 'cpanspec';
+my $docker_dir = '/usr/share/cpanspec/Dockerfiles';
+my $build      = undef;
+my $lable      = undef;
+
+GetOptions(
+    'help|h'       => \$help,
+    'man'          => \$man,
+    'build'        => \$build,
+    'package=s'    => \@packages,
+    'image=s'      => \$image,
+    'volume=s'     => \$volume,
+    'docker_dir=s' => \$docker_dir,
+    'lable=s'      => \$lable,
+) || pod2usage( -verbose => 0 );
+
+pod2usage( -verbose => 1 ) if ($help);
+pod2usage( -verbose => 2 ) if ($man);
+pod2usage( -verbose => 1 ) unless ( $image && ( $build || @packages ) );
+
+$volume .= "-$image" if ( $volume eq 'cpanspec' );
+$lable = $volume unless ($lable);
+
+if ($build) {
+    build();
+}
+else {
+    run();
+}
+
+exit;
+
+#### subs ####
+
+sub build {
+    my $cmd =
+qq{docker build --rm --tag cpanspec-$image --file "$docker_dir/$image" "$docker_dir"};
+    print("running: $cmd\n");
+
+    system($cmd);
+
+    return;
+}
+
+sub run {
+
+    my $target = '';
+    my %files;
+    my $cmd = '';
+
+    foreach my $pkg (@packages) {
+        if ( -f $pkg ) {
+            my $file_name = fileparse($pkg);
+            $target .= "/cpanspec/$file_name ";
+            $files{$file_name} = $pkg;
+        }
+        else {
+            $target .= "$pkg ";
+        }
+    }
+
+    $cmd = qq{docker volume create $volume};
+    print("running: $cmd\n");
+    system($cmd);
+
+    $cmd = qq{docker volume ls -f name=$volume --format "{{.Mountpoint}}"};
+    print("running: $cmd\n");
+    my $mtp = qx/$cmd/;
+    chomp($mtp);
+    croak(qq{Working dir "$mtp" does not exist!}) unless ( $mtp && $mtp ne '' );
+
+    my @files = keys(%files);
+
+    if ( -f "bin/cpanspec" ) {
+        push( @files, 'bin/cpanspec' );
+    }
+    else {
+        push( @files, '/usr/bin/cpanspec' );
+    }
+
+    $cmd =
+qq{docker run -d --interactive --tty --volume=$volume:/cpanspec:rw --workdir=/cpanspec --name=$lable-tmp cpanspec-$image /usr/bin/bash};
+    print("running: $cmd\n");
+    system($cmd);
+
+    $cmd =
+        qq{tar -c }
+      . join( ' ', @files )
+      . qq{ | docker run -i --rm --workdir=/cpanspec --volumes-from=$lable-tmp cpanspec-$image /usr/bin/tar -xv --transform='s#^.*/##'};
+    print("running: $cmd\n");
+    system($cmd);
+
+    system("docker stop $lable-tmp && docker rm $lable-tmp");
+
+    $cmd =
+qq{docker run --rm --interactive --tty --volume=$volume:/cpanspec:rw --workdir=/cpanspec --name=$lable cpanspec-$image /usr/bin/perl /cpanspec/cpanspec --verbose --force --build --follow --path=/cpanspec --packager '$ENV{"USER"}' $target};
+    print("running: $cmd\n");
+    system($cmd);
+
+    return;
+
+}

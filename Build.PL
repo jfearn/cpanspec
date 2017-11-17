@@ -11,7 +11,7 @@ my $class = Module::Build->subclass(
         sub ACTION_build {
             my $self = shift;
             $self->SUPER::ACTION_build(@_);
-            symlink("cpanspec", "$FindBin::Bin/blib/script/cpanget");
+            symlink("bin/cpanspec", "$FindBin::Bin/blib/script/cpanget");
             symlink("cpanspec.1p", "$FindBin::Bin/blib/bindoc/cpanget.1p");
         }
 
@@ -35,7 +35,7 @@ my $builder = $class->new(
     dist_name          => 'cpanspec',
     license            => 'perl',
     dist_author        => 'Steven Pritchard <steve@cpan.org>',
-    dist_version_from  => 'cpanspec',
+    dist_version_from  => 'bin/cpanspec',
     configure_requires => {'Module::Build' => 0},
     build_requires     => {
         'Module::Build'            => 0.36,
@@ -78,12 +78,14 @@ my $builder = $class->new(
         'YAML'                     => 0,
         'Perl::Version'            => 1.013,
     },
-    script_files      => ['cpanspec', 'cs-docker',],
+    script_files      => ['bin/cpanspec', 'bin/cs-docker',],
     install_path      => {'Dockerfiles' => '/usr/share/cpanspec/Dockerfiles',},
     Dockerfiles_files => {
         'Dockerfiles/centos6'  => 'Dockerfiles/centos6',
+        'Dockerfiles/centos7'  => 'Dockerfiles/centos7',
         'Dockerfiles/fedora22' => 'Dockerfiles/fedora22',
-
+        'Dockerfiles/fedora24' => 'Dockerfiles/fedora24',
+        'Dockerfiles/fedora25' => 'Dockerfiles/fedora25',
     },
 );
 

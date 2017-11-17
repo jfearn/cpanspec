@@ -21,6 +21,9 @@ else {
             rpms
             specfile
             srpm
+            RPM
+            spec
+            cs
             )
     );
 }

@@ -10,4 +10,5 @@ META.json
 META.yml
 *.bak
 tmp/
+.vstags
 
