@@ -83,8 +83,8 @@ my $builder = $class->new(
     Dockerfiles_files => {
         'Dockerfiles/centos6'  => 'Dockerfiles/centos6',
         'Dockerfiles/centos7'  => 'Dockerfiles/centos7',
-        'Dockerfiles/fedora22' => 'Dockerfiles/fedora22',
-        'Dockerfiles/fedora24' => 'Dockerfiles/fedora24',
+        'Dockerfiles/fedora27' => 'Dockerfiles/fedora27',
+        'Dockerfiles/fedora26' => 'Dockerfiles/fedora26',
         'Dockerfiles/fedora25' => 'Dockerfiles/fedora25',
     },
 );

@@ -1,16 +1,16 @@
 Artistic
+bin/cpanspec
+bin/cs-docker
 BUGS
 Build.PL
 Changes
 COPYING
-bin/cpanspec
-bin/cs-docker
 Dockerfiles/centos6
 Dockerfiles/centos7
 Dockerfiles/cpanspec.repo
-Dockerfiles/fedora22
-Dockerfiles/fedora24
 Dockerfiles/fedora25
+Dockerfiles/fedora26
+Dockerfiles/fedora27
 MANIFEST			This list of files
 META.yml
 README.md
