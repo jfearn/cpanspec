@@ -21,6 +21,8 @@ cs-docker <options>
   --docker_dir=s  The directory to look for dockerfiles and sources. Defaults to: '/usr/share/cpanspec/Dockerfiles'.
   --lable=s       Override the volume and image name.
   --shell      Shell in to the container
+  --sync       Copy the repo to the local file system
+  --to         The path to copy the repo to.
 
 =head1 DESCRIPTION
 
