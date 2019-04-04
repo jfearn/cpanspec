@@ -11,6 +11,8 @@ Dockerfiles/cpanspec.repo
 Dockerfiles/fedora25
 Dockerfiles/fedora26
 Dockerfiles/fedora27
+Dockerfiles/fedora29
+Dockerfiles/eng-rhel-6-extras.repo
 MANIFEST			This list of files
 META.yml
 README.md

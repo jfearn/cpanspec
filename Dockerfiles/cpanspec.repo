@@ -4,15 +4,3 @@ baseurl = file:///cpanspec/repo/
 skip_if_unavailable=1
 gpgcheck=0
 enabled=1
-
-[eng-rhel-7]
-name=ENG Internal - RHEL-7 - $basearch
-baseurl=http://download.lab.bos.redhat.com/rel-eng/repos/eng-rhel-7/$basearch
-gpgcheck=0
-enabled=0
-
-[eng-rhel-7-src]
-name=ENG Internal - RHEL-7 - Source
-baseurl: http://download.lab.bos.redhat.com/rel-eng/repos/eng-rhel-7/src
-gpgcheck=0
-enabled=1

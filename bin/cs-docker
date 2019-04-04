@@ -19,7 +19,9 @@ cs-docker <options>
   --package=s     The CPAN module or archive to package. Can be set multiple times.
   --volume=s      Override the docker volume. Defaults to: 'cpanspec-$image'.
   --docker_dir=s  The directory to look for dockerfiles and sources. Defaults to: '/usr/share/cpanspec/Dockerfiles'.
-  --lable=s       Override the volume and image name.          
+  --lable=s       Override the volume and image name.
+  --shell      Shell in to the container
+
 =head1 DESCRIPTION
 
 Convenience wrapper for using cpanspec in Docker!
@@ -28,38 +30,43 @@ Convenience wrapper for using cpanspec in Docker!
 
 use warnings;
 use strict;
-use Getopt::Long;
-use Pod::Usage;
+use 5.10.1;
 use Carp;
-use File::Path qw(make_path rmtree);
+
+use Capture::Tiny ':all';
 use File::Basename;
 use File::Copy;
+use File::Path qw(make_path rmtree);
+use Getopt::Long;
+use Pod::Usage;
 
 my $man  = 0;
 my $help = 0;
 my @packages;
-my $image      = undef;
+my $image;
 my $volume     = 'cpanspec';
 my $docker_dir = '/usr/share/cpanspec/Dockerfiles';
-my $build      = undef;
-my $lable      = undef;
+my ($build, $lable, $shell, $sync, $to);
 
 GetOptions(
     'help|h'       => \$help,
     'man'          => \$man,
     'build'        => \$build,
+    'shell'        => \$shell,
     'package=s'    => \@packages,
     'image=s'      => \$image,
     'volume=s'     => \$volume,
     'docker_dir=s' => \$docker_dir,
     'lable=s'      => \$lable,
-) || pod2usage( -verbose => 0 );
+    'sync'         => \$sync,
+    'to=s'         => \$to,
+) || pod2usage(-verbose => 0);
 
-pod2usage( -verbose => 1 ) if ($help);
-pod2usage( -verbose => 2 ) if ($man);
-pod2usage( -verbose => 1 ) unless ( $image && ( $build || @packages ) );
+pod2usage(-verbose => 1) if ($help);
+pod2usage(-verbose => 2) if ($man);
+pod2usage(-verbose => 1) unless ($image && ($build || @packages || $shell || $sync));
 
-$volume .= "-$image" if ( $volume eq 'cpanspec' );
+$volume .= "-$image" if ($volume eq 'cpanspec');
 $lable = $volume unless ($lable);
 
 if ($build) {
@@ -74,8 +81,8 @@ exit;
 #### subs ####
 
 sub build {
-    my $cmd =
-qq{docker build --rm --tag cpanspec-$image --file "$docker_dir/$image" "$docker_dir"};
+    my $cmd
+        = qq{docker build --rm --tag cpanspec-$image --file "$docker_dir/$image" "$docker_dir"};
     print("running: $cmd\n");
 
     system($cmd);
@@ -90,7 +97,7 @@ sub run {
     my $cmd = '';
 
     foreach my $pkg (@packages) {
-        if ( -f $pkg ) {
+        if (-f $pkg) {
             my $file_name = fileparse($pkg);
             $target .= "/cpanspec/$file_name ";
             $files{$file_name} = $pkg;
@@ -108,35 +115,65 @@ sub run {
     print("running: $cmd\n");
     my $mtp = qx/$cmd/;
     chomp($mtp);
-    croak(qq{Working dir "$mtp" does not exist!}) unless ( $mtp && $mtp ne '' );
+    croak(qq{Working dir "$mtp" does not exist!}) unless ($mtp && $mtp ne '');
 
-    my @files = keys(%files);
+    my @files = values(%files);
 
-    if ( -f "bin/cpanspec" ) {
-        push( @files, 'bin/cpanspec' );
+    if (-f "bin/cpanspec") {
+        push(@files, 'bin/cpanspec');
     }
     else {
-        push( @files, '/usr/bin/cpanspec' );
+        push(@files, '/usr/bin/cpanspec');
     }
 
-    $cmd =
-qq{docker run -d --interactive --tty --volume=$volume:/cpanspec:rw --workdir=/cpanspec --name=$lable-tmp cpanspec-$image /usr/bin/bash};
-    print("running: $cmd\n");
-    system($cmd);
+    if ($shell) {
+        $cmd
+            = qq{docker run --rm --interactive --tty --volume=$volume:/cpanspec:rw --workdir=/cpanspec --name=$lable-tmp cpanspec-$image /bin/bash};
+        print("running: $cmd\n");
+        exec($cmd);
+    }
+    elsif ($sync) {
+        croak "you need to suppl --to!" unless ($to);
+        make_path($to) unless (-d $to);
 
-    $cmd =
-        qq{tar -c }
-      . join( ' ', @files )
-      . qq{ | docker run -i --rm --workdir=/cpanspec --volumes-from=$lable-tmp cpanspec-$image /usr/bin/tar -xv --transform='s#^.*/##'};
-    print("running: $cmd\n");
-    system($cmd);
+        $cmd
+            = qq{docker run -d --interactive --tty --volume=$volume:/cpanspec:rw --workdir=/cpanspec --name=$lable-sync cpanspec-$image /bin/bash};
+        print("running: $cmd\n");
 
-    system("docker stop $lable-tmp && docker rm $lable-tmp");
+        my ($stdout, $stderr, $exit) = capture {
+            system($cmd );
+        };
+        my $id = $stdout;
+        chomp($id);
+        $cmd = qq{docker cp -a $id:/cpanspec/repo $to/.};
+        system($cmd);
+        $cmd = qq{docker cp -a $id:/cpanspec/SRPMS $to/.};
+        system($cmd);
+        $cmd = qq{docker cp -a $id:/cpanspec/build_order.txt $to/.};
+        system($cmd);
+        system("docker stop $lable-sync && docker rm $lable-sync");
 
-    $cmd =
-qq{docker run --rm --interactive --tty --volume=$volume:/cpanspec:rw --workdir=/cpanspec --name=$lable cpanspec-$image /usr/bin/perl /cpanspec/cpanspec --verbose --force --build --follow --path=/cpanspec --packager '$ENV{"USER"}' $target};
-    print("running: $cmd\n");
-    system($cmd);
+    }
+    else {
+        $cmd
+            = qq{docker run -d --interactive --tty --volume=$volume:/cpanspec:rw --workdir=/cpanspec --name=$lable-tmp cpanspec-$image /bin/bash};
+        print("running: $cmd\n");
+        system($cmd);
+
+        $cmd
+            = qq{tar -c }
+            . join(' ', @files)
+            . qq{ | docker run -i --rm --workdir=/cpanspec --volumes-from=$lable-tmp cpanspec-$image /bin/tar -xv --transform='s#^.*/##'};
+        print("running: $cmd\n");
+        system($cmd);
+
+        system("docker stop $lable-tmp && docker rm $lable-tmp");
+
+        $cmd
+            = qq{docker run --rm --interactive --tty --volume=$volume:/cpanspec:rw --workdir=/cpanspec --name=$lable cpanspec-$image bash -c "/usr/bin/perl /cpanspec/cpanspec --verbose --force --build --follow --path=/cpanspec --packager '$ENV{"USER"}' $target"};
+        print("running: $cmd\n");
+        system($cmd);
+    }
 
     return;
 

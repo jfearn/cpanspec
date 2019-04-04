@@ -1,4 +1,4 @@
-FROM fedora:27
+FROM fedora:29
 
 MAINTAINER "Jeff Fearn" <jfearn@redhat.com>
 
@@ -22,6 +22,8 @@ RUN dnf -y install \
   'perl(Text::Autoformat)' \
   'perl(Perl::Version)' \
   'perl(YAML)' \
+  'perl(File::pushd)' \
+  'perl(CPAN::Meta)' \
   createrepo \
   deltarpm \
   gcc \
